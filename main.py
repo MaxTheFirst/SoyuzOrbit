@@ -1,0 +1,49 @@
+import pygame
+import math
+import config
+
+from earth import Earth
+from orbit import Orbit
+from iss import ISS
+from rocket import Rocket
+
+
+pygame.init()
+screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT))
+pygame.display.set_caption("МКС на орбите Земли")
+clock = pygame.time.Clock()
+
+
+earth = Earth()
+orbit = Orbit()
+iss = ISS(orbit)
+rocket = Rocket()
+
+
+def main():
+    running = True
+    while running:
+        dt = clock.tick(config.FPS) / 1000  # секунд на кадр
+
+        earth.update(dt)
+        iss.update(dt)
+
+        screen.fill((0, 0, 20))
+        earth.draw(screen)
+        orbit.draw(screen)
+        earth.draw_radius(screen)
+        iss.draw(screen)
+        rocket.update(dt)
+        rocket.draw(screen)
+
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+    pygame.quit()
+
+
+if __name__ == '__main__':
+    main()
