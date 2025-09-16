@@ -16,7 +16,7 @@ class ISS:
         # угловая скорость круговой орбиты (рад/с)
         self.omega = math.sqrt(mu / (self.orbit_radius_km ** 3))
 
-        self.angle = 0.0
+        self.angle = math.radians(config.STARTE_ANGEL)
         self.size = 8
 
     def update(self, dt):

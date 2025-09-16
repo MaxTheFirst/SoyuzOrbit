@@ -1,5 +1,4 @@
 import pygame
-import math
 import config
 
 from earth import Earth
@@ -17,7 +16,7 @@ clock = pygame.time.Clock()
 earth = Earth()
 orbit = Orbit()
 iss = ISS(orbit)
-rocket = Rocket()
+rocket = Rocket(iss)
 
 
 def main():
@@ -35,6 +34,7 @@ def main():
         iss.draw(screen)
         rocket.update(dt)
         rocket.draw(screen)
+        rocket.draw_info(screen)
 
         pygame.display.flip()
 
