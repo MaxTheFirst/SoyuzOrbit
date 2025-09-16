@@ -4,14 +4,15 @@ import math
 
 from orbit import Orbit
 
+# гравитационный параметр (км^3/с^2)
+mu = config.G * config.M_EARTH
+
 class ISS:
     def __init__(self, orbit: Orbit):
         self.orbit_radius_px = orbit.radius_px
         # радиус в км
         self.orbit_radius_km = self.orbit_radius_px / config.SCALE
 
-        # гравитационный параметр (км^3/с^2)
-        mu = config.G * config.M_EARTH  # убедись, что это км^3/с^2
 
         # угловая скорость круговой орбиты (рад/с)
         self.omega = math.sqrt(mu / (self.orbit_radius_km ** 3))

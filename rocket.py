@@ -11,6 +11,8 @@ class Rocket:
         # Начальная скорость с учётом вращения Земли
         self.vel = [config.VEL_X, 0.0]
 
+        self.distance_to_iss = 0
+
         # Текущая ступень
         self.stage_index = 0
         # Общая масса ракеты
@@ -43,10 +45,10 @@ class Rocket:
         # Вектор к МКС
         dx = iss_pos[0] - self.pos[0] / config.SCALE
         dy = iss_pos[1] - self.pos[1] / config.SCALE
-        distance_to_iss = math.sqrt(dx ** 2 + dy ** 2)
+        self.distance_to_iss = math.sqrt(dx ** 2 + dy ** 2)
 
         # Стыковка
-        if distance_to_iss < config.DOCKING_ERROR:  # 10 км допустимо
+        if self.distance_to_iss < config.DOCKING_ERROR:  # 10 км допустимо
             r_iss = math.sqrt(iss_pos[0] ** 2 + iss_pos[1] ** 2)
             v_orb = math.sqrt(config.G * config.M_EARTH / r_iss)
             tx = -iss_pos[1] / r_iss
@@ -92,8 +94,8 @@ class Rocket:
         else:
             # На орбите: небольшая корректировка для догонки МКС
             # вектор от ракеты к МКС по касательной
-            v_rel_x = dx - (self.vel[0] / config.SCALE)
-            v_rel_y = dy - (self.vel[1] / config.SCALE)
+            v_rel_x = dx - self.vel[0] * dt
+            v_rel_y = dy - self.vel[1] * dt
             norm = math.sqrt(v_rel_x ** 2 + v_rel_y ** 2)
             if norm != 0:
                 thrust_dir_x = v_rel_x / norm
@@ -116,7 +118,6 @@ class Rocket:
             v_orb = math.sqrt(config.G * config.M_EARTH / r)
             self.vel[0] = v_orb * tx
             self.vel[1] = v_orb * ty
-            self.active = False
             self.on_orbit = True
 
     def draw(self, surface):
@@ -126,19 +127,23 @@ class Rocket:
 
     def draw_info(self, surface):
         font = pygame.font.Font(None, 24)  # Создаем шрифт (размер 24)
-        
+
         # Расчёт скорости и высоты
         speed = math.sqrt(self.vel[0] ** 2 + self.vel[1] ** 2) * config.SCALE
         r = math.sqrt(self.pos[0] ** 2 + self.pos[1] ** 2)
         altitude = r - config.R_EARTH * config.SCALE
-        
+
         # Создаем строки для отображения
         info_lines = [
             f"Speed: {speed:.2f} m/s",
             f"Stage: {self.stage_index + 1}/{len(config.stages)}",
-            f"Altitude: {altitude / config.SCALE:.2f} km"
+            f"Mass: {self.mass:.2f} kg",
+            f"Distance: {self.distance_to_iss:.2f}",
+            f"Altitude: {altitude / config.SCALE:.2f} km",
+            f"Orbit: {self.on_orbit}",
+            f"Docked: {self.docked}"
         ]
-        
+
         # Выводим строки в правом верхнем углу
         for i, line in enumerate(info_lines):
             text_surf = font.render(line, True, (255, 255, 255))

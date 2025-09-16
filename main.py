@@ -42,6 +42,26 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
+        if rocket.docked:
+            frame = screen.copy()
+            pygame.image.save(frame, "frame.png")
+            show_until = pygame.time.get_ticks() + config.ENDING
+
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                        break
+
+                screen.blit(frame, (0, 0))
+                pygame.display.flip()
+                clock.tick(30)
+
+                # выходим по таймеру или если окно закрыли
+                if not running or pygame.time.get_ticks() >= show_until:
+                    break
+            break
+
     pygame.quit()
 
 
