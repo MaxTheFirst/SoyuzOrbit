@@ -4,18 +4,24 @@ import math
 
 from orbit import Orbit
 
-
 class ISS:
     def __init__(self, orbit: Orbit):
         self.orbit_radius_px = orbit.radius_px
-        # угловая скорость (рад/с)
-        self.omega = config.V_ORBIT / orbit.radius_px
-        self.omega_sim = self.omega * config.XTIME
+        # радиус в км
+        self.orbit_radius_km = self.orbit_radius_px / config.SCALE
+
+        # гравитационный параметр (км^3/с^2)
+        mu = config.G * config.M_EARTH  # убедись, что это км^3/с^2
+
+        # угловая скорость круговой орбиты (рад/с)
+        self.omega = math.sqrt(mu / (self.orbit_radius_km ** 3))
+
         self.angle = 0.0
         self.size = 8
 
     def update(self, dt):
-        self.angle += self.omega_sim * dt
+        dt_eff = dt * config.XTIME
+        self.angle = (self.angle + self.omega * dt_eff) % (2 * math.pi)
 
     def get_position(self):
         x = config.CENTER_X + self.orbit_radius_px * math.cos(self.angle)
