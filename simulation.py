@@ -1,5 +1,5 @@
 # simulation.py
-
+import numpy
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
@@ -21,17 +21,17 @@ t_eval = np.linspace(0, t_max, 30000)  # Шаги времени для инте
 # Сила гравитации со стороны Земли
 def force_earth(x, y):
     r = np.sqrt(x ** 2 + y ** 2)
-    f_x = -G * M_earth * x / r ** 3
-    f_y = -G * M_earth * y / r ** 3
-    return f_x, f_y
+    a_x = -G * M_earth * x / r ** 3
+    a_y = -G * M_earth * y / r ** 3
+    return a_x, a_y
 
 
 # Сила гравитации со стороны Луны
 def force_moon(x, y):
     r = np.sqrt((x - R_earth_moon) ** 2 + y ** 2)
-    f_x = -G * M_moon * (x - R_earth_moon) / r ** 3
-    f_y = -G * M_moon * y / r ** 3
-    return f_x, f_y
+    a_x = -G * M_moon * (x - R_earth_moon) / r ** 3
+    a_y = -G * M_moon * y / r ** 3
+    return a_x, a_y
 
 
 # Уравнения движения с остановкой при достижении поверхности Луны
@@ -43,10 +43,10 @@ def equations_with_stop_at_surface(t, y):
     if distance_to_surface <= 0:  # Если пересекаем поверхность Луны
         return [0, 0, 0, 0]  # Останавливаем движение
 
-    fx_earth, fy_earth = force_earth(x, y_position)
-    fx_moon, fy_moon = force_moon(x, y_position)
+    ax_earth, ay_earth = force_earth(x, y_position)
+    ax_moon, ay_moon = force_moon(x, y_position)
 
-    return [vx, vy, fx_earth + fx_moon, fy_earth + fy_moon]
+    return [vx, vy, ax_earth + ax_moon, ay_earth + ay_moon]
 
 
 # Функция стоимости для оптимизации параметров
@@ -87,7 +87,7 @@ def cost_function(params):
 # Функция для оптимизации начальных параметров
 def optimize_trajectory():
     print("Начало грубой оптимизации...")
-    initial_guess = [1.12e4, np.pi / 4]
+    initial_guess = numpy.array([1.12e4, np.pi / 4])
     coarse_bounds = [(8000, 25000), (0, np.pi)]
     result_coarse = minimize(
         cost_function,
@@ -105,7 +105,7 @@ def optimize_trajectory():
     ]
     result_fine = minimize(
         cost_function,
-        x0=[v0_coarse, theta0_coarse],
+        x0=numpy.array([v0_coarse, theta0_coarse]),
         bounds=fine_bounds,
         method='Powell'
     )
