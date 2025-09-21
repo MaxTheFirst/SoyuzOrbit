@@ -1,54 +1,52 @@
 # visualization.py
 
 import matplotlib.pyplot as plt
-from scipy.integrate import solve_ivp
 import numpy as np
 
-# Импортируем переменные и функции из модуля симуляции
+# Импортируем константы и функции с новыми именами
 from simulation import (
-    equations_with_stop_at_surface, R_earth, R_moon,
-    R_earth_moon, t_max, t_eval
+    RADIUS_EARTH, RADIUS_MOON,
+    DISTANCE_EARTH_MOON, calculate_moon_position
 )
 
 
-# Функция для построения траектории
-def visualize_trajectory(v0, theta0):
-    initial_state = [0, R_earth, v0 * np.cos(theta0), v0 * np.sin(theta0)]
+def visualize_trajectory(simulation_result):
+    x_coords = simulation_result.y[0]
+    y_coords = simulation_result.y[1]
 
-    solution = solve_ivp(
-        equations_with_stop_at_surface,
-        (0, t_max),
-        initial_state,
-        t_eval=t_eval,
-        method='DOP853',
-        rtol=1e-12,
-        atol=1e-14
-    )
+    plt.figure(figsize=(12, 8))
 
-    x, y = solution.y[0], solution.y[1]
+    # Отображение орбиты Луны
+    orbit_angles = np.linspace(0, 2 * np.pi, 200)
+    orbit_x = DISTANCE_EARTH_MOON * np.cos(orbit_angles)
+    orbit_y = DISTANCE_EARTH_MOON * np.sin(orbit_angles)
+    plt.plot(orbit_x / 1e6, orbit_y / 1e6, color="gray", linestyle="--", label="Орбита Луны")
 
-    plt.figure(figsize=(12, 6))
-    plt.plot(x / 1e6, y / 1e6, label="Траектория", color="green")
+    # Траектория ракеты
+    plt.plot(x_coords / 1e6, y_coords / 1e6, label="Траектория ракеты", color="green")
 
-    earth_circle = plt.Circle((0, 0), R_earth / 1e6, color="blue", label="Земля", alpha=0.7)
+    # Земля
+    earth_circle = plt.Circle((0, 0), RADIUS_EARTH / 1e6, color="blue", label="Земля", alpha=0.7)
     plt.gca().add_artist(earth_circle)
 
-    moon_circle = plt.Circle((R_earth_moon / 1e6, 0), R_moon / 1e6, color="gray", label="Луна", alpha=0.7)
+    # Луна в точке встречи
+    flight_time = simulation_result.t[-1]
+    moon_final_x, moon_final_y = calculate_moon_position(flight_time)
+    moon_circle = plt.Circle(
+        (moon_final_x / 1e6, moon_final_y / 1e6),
+        RADIUS_MOON / 1e6, color="gray", label="Луна (точка встречи)", alpha=0.7
+    )
     plt.gca().add_artist(moon_circle)
 
-    plt.xlabel("х (тыс. км)")
-    plt.ylabel("у (тыс. км)")
-    plt.title("Оптимизированная траектория до поверхности Луны")
+    # Настройки графика
+    plt.xlabel("X координата (тыс. км)")
+    plt.ylabel("Y координата (тыс. км)")
+    plt.title("Оптимизированная траектория до движущейся Луны")
     plt.legend()
     plt.grid(True)
     plt.axis("scaled")
 
-    buffer = 0.1 * 1e8 / 1e6
-    y_min = min(y.min() / 1e6, -R_earth / 1e6) - 2 * buffer
-    y_max = max(y.max() / 1e6, R_moon / 1e6) + buffer
-    plt.gca().set_ylim([y_min, y_max])
-
-    filename = 'trajectory.png'
+    filename = 'optimized_trajectory.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"График сохранён в файл: {filename}")
     plt.show()

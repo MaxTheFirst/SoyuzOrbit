@@ -1,47 +1,49 @@
 # main.py
+import os
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
 
 import numpy as np
 from scipy.integrate import solve_ivp
 
-# Импортируем необходимые функции из других модулей
+# Импортируем функции с новыми, понятными именами
 from simulation import (
-    optimize_trajectory, calculate_speed_table,
-    equations_with_stop_at_surface, R_earth, t_max, t_eval
+    optimize_trajectory, generate_flight_summary_table,
+    calculate_trajectory_derivatives, RADIUS_EARTH, MAX_SIMULATION_TIME
 )
 from visualization import visualize_trajectory
 from pygame_visualization import animate_trajectory
 
 if __name__ == "__main__":
-    # 1. Оптимизация траектории
-    print("--- Этап 1: Оптимизация траектории ---")
-    v0_opt, theta0_opt = optimize_trajectory()
-    print("-" * 40)
+    # 1. Находим лучшие параметры для запуска
+    optimal_velocity, optimal_angle = optimize_trajectory()
 
-    # 2. Построение статического графика (Matplotlib)
-    print("\n--- Этап 2: Построение статического графика (Matplotlib) ---")
-    visualize_trajectory(v0_opt, theta0_opt)
-    print("-" * 40)
+    # 2. Пересчитываем финальную траекторию с высокой точностью для визуализации
+    print("\nПересчет финальной траектории с высокой точностью...")
+    initial_state = [0, RADIUS_EARTH + 1, optimal_velocity * np.cos(optimal_angle),
+                     optimal_velocity * np.sin(optimal_angle)]
 
-    # 3. Расчёт и вывод таблицы скоростей
-    print("\n--- Этап 3: Расчет ключевых точек полета ---")
-    speed_table = calculate_speed_table(v0_opt, theta0_opt, num_points=10)
-    print("Таблица ключевых точек полета:")
-    print(speed_table)
-    print("-" * 40)
+    # Импортируем события для финального расчета
+    from simulation import event_rocket_hits_earth, event_rocket_hits_moon, event_rocket_escapes
 
-    # 4. Запуск анимации Pygame
-    print("\n--- Этап 4: Запуск динамической анимации (Pygame) ---")
-    print("Сейчас откроется окно с анимацией. Нажмите ESC или закройте окно для выхода.")
-
-    initial_state = [0, R_earth, v0_opt * np.cos(theta0_opt), v0_opt * np.sin(theta0_opt)]
-    full_solution = solve_ivp(
-        equations_with_stop_at_surface,
-        (0, t_max),
+    final_trajectory_solution = solve_ivp(
+        calculate_trajectory_derivatives,
+        (0, MAX_SIMULATION_TIME),
         initial_state,
-        t_eval=t_eval,
-        method='DOP853',
+        t_eval=np.linspace(0, MAX_SIMULATION_TIME, 5000),
+        method='LSODA',
         rtol=1e-12,
-        atol=1e-14
+        atol=1e-14,
+        events=[event_rocket_hits_earth, event_rocket_hits_moon, event_rocket_escapes]
     )
 
-    animate_trajectory(full_solution)
+    # 3. Показываем статический график
+    visualize_trajectory(final_trajectory_solution)
+
+    # 4. Выводим таблицу с данными
+    summary_table = generate_flight_summary_table(optimal_velocity, optimal_angle, num_points=15)
+    print("\nКлючевые точки полета:")
+    print(summary_table.round(2))
+
+    # 5. Запускаем анимацию
+    print("\nЗапуск анимации...")
+    animate_trajectory(final_trajectory_solution)
