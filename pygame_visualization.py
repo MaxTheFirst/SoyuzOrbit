@@ -4,12 +4,15 @@ import pygame
 import sys
 import numpy as np
 
-from simulation import RADIUS_EARTH, RADIUS_MOON, DISTANCE_EARTH_MOON, calculate_moon_position
+from simulation import (
+    RADIUS_EARTH, RADIUS_MOON, LEO_RADIUS,
+    DISTANCE_EARTH_MOON, calculate_moon_position
+)
 
 # --- Настройки ---
-SCREEN_WIDTH = 1200
-SCREEN_HEIGHT = 800
-WINDOW_TITLE = "Анимация полета на Луну"
+INITIAL_WIDTH = 1200
+INITIAL_HEIGHT = 800
+WINDOW_TITLE = "Интерактивная симуляция полета на Луну"
 # Цвета
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -17,110 +20,169 @@ BLUE = (100, 149, 237)
 GRAY = (128, 128, 128)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
+LEO_BLUE = (173, 216, 230)
 
 
 def animate_trajectory(simulation_result):
     pygame.init()
 
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen = pygame.display.set_mode((INITIAL_WIDTH, INITIAL_HEIGHT), pygame.RESIZABLE)
     pygame.display.set_caption(WINDOW_TITLE)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Arial", 18)
 
-    scale = SCREEN_WIDTH / (DISTANCE_EARTH_MOON * 2.2)
-    offset_x = SCREEN_WIDTH // 2
-    offset_y = SCREEN_HEIGHT // 2
+    # --- Управление камерой ---
+    # Начальный масштаб, чтобы видеть всю орбиту Луны
+    initial_scale = screen.get_width() / (DISTANCE_EARTH_MOON * 2.2)
 
-    def to_screen_coords(x, y):
-        screen_x = int(offset_x + x * scale)
-        screen_y = int(offset_y - y * scale)
-        return screen_x, screen_y
+    # Динамические параметры камеры
+    scale = initial_scale
+    offset_x = screen.get_width() / 2
+    offset_y = screen.get_height() / 2
 
-    earth_pos = to_screen_coords(0, 0)
+    panning = False
+    pan_start_pos = (0, 0)
+    fullscreen = False
 
-    MIN_EARTH_RADIUS_PX = 20
-    MIN_MOON_RADIUS_PX = 8
-
-    earth_radius_screen = max(int(RADIUS_EARTH * scale), MIN_EARTH_RADIUS_PX)
-
-    orbit_points = []
-    for angle in np.linspace(0, 2 * np.pi, 200):
-        orbit_x = DISTANCE_EARTH_MOON * np.cos(angle)
-        orbit_y = DISTANCE_EARTH_MOON * np.sin(angle)
-        orbit_points.append(to_screen_coords(orbit_x, orbit_y))
-
-    rocket_x_coords = simulation_result.y[0]
-    rocket_y_coords = simulation_result.y[1]
+    # --- Подготовка данных траектории ---
+    rocket_coords = np.array(simulation_result.y[:2].T)
     timestamps = simulation_result.t
 
-    screen_trajectory_points = [to_screen_coords(x, y) for x, y in zip(rocket_x_coords, rocket_y_coords)]
+    def reset_view():
+        """Сбрасывает масштаб и положение камеры к начальным."""
+        nonlocal scale, offset_x, offset_y
+        w, h = screen.get_size()
+        scale = w / (DISTANCE_EARTH_MOON * 2.2)
+        offset_x = w / 2
+        offset_y = h / 2
 
-    ### ИЗМЕНЕНО: Находим кадр ВИЗУАЛЬНОГО СТАРТА ###
-    visual_launch_frame = 0
-    for i in range(len(screen_trajectory_points)):
-        rocket_pos_screen = screen_trajectory_points[i]
-        distance_from_earth_center_pixels = np.hypot(rocket_pos_screen[0] - earth_pos[0],
-                                                     rocket_pos_screen[1] - earth_pos[1])
-        # Как только ракета оказывается снаружи видимого круга Земли, это наш старт
-        if distance_from_earth_center_pixels > earth_radius_screen:
-            visual_launch_frame = i
-            break
-
-    # Находим кадр визуального столкновения с Луной (как и раньше)
-    visual_impact_frame = -1
-    for i in range(len(timestamps)):
-        moon_x, moon_y = calculate_moon_position(timestamps[i])
-        moon_pos_screen = to_screen_coords(moon_x, moon_y)
-        moon_radius_screen = max(int(RADIUS_MOON * scale), MIN_MOON_RADIUS_PX)
-        rocket_pos_screen = screen_trajectory_points[i]
-        distance_pixels = np.hypot(rocket_pos_screen[0] - moon_pos_screen[0], rocket_pos_screen[1] - moon_pos_screen[1])
-        if distance_pixels <= moon_radius_screen:
-            visual_impact_frame = i
-            break
-
+    # --- Основной цикл ---
     running = True
-    # Начинаем анимацию с кадра визуального старта
-    frame_index = visual_launch_frame
+    frame_index = 0
     animation_speed = max(1, len(timestamps) // 500)
+    paused = False
 
     while running:
+        # --- Обработка событий (управление) ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+            if event.type == pygame.QUIT:
                 running = False
 
-        screen.fill(BLACK)
+            # Изменение размера окна
+            elif event.type == pygame.VIDEORESIZE:
+                screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
+                reset_view()
 
-        current_frame = int(frame_index)
+            # Управление мышью
+            elif event.type == pygame.MOUSEWHEEL:
+                zoom_factor = 1.1 if event.y > 0 else 1 / 1.1
+                mouse_x, mouse_y = pygame.mouse.get_pos()
 
-        # Замораживаем анимацию при визуальном контакте с Луной
-        if visual_impact_frame != -1 and current_frame >= visual_impact_frame:
-            current_frame = visual_impact_frame
-        else:
+                # Координаты мира под курсором до зума
+                world_x_before = (mouse_x - offset_x) / scale
+                world_y_before = (offset_y - mouse_y) / scale
+
+                scale *= zoom_factor
+
+                # Новые смещения, чтобы точка под курсором осталась на месте
+                offset_x = mouse_x - world_x_before * scale
+                offset_y = mouse_y + world_y_before * scale
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Левая кнопка мыши
+                    panning = True
+                    pan_start_pos = event.pos
+
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    panning = False
+
+            elif event.type == pygame.MOUSEMOTION:
+                if panning:
+                    dx, dy = event.pos[0] - pan_start_pos[0], event.pos[1] - pan_start_pos[1]
+                    offset_x += dx
+                    offset_y += dy
+                    pan_start_pos = event.pos
+
+            # Управление с клавиатуры
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_f:  # Полный экран
+                    fullscreen = not fullscreen
+                    if fullscreen:
+                        pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                    else:
+                        pygame.display.set_mode((INITIAL_WIDTH, INITIAL_HEIGHT), pygame.RESIZABLE)
+                    reset_view()
+                elif event.key == pygame.K_r:  # Сброс вида
+                    reset_view()
+                elif event.key == pygame.K_SPACE:  # Пауза
+                    paused = not paused
+
+        # --- Обновление анимации ---
+        if not paused:
             frame_index += animation_speed
             if frame_index >= len(timestamps):
                 frame_index = len(timestamps) - 1
-            current_frame = int(frame_index)
 
-        # Отрисовка
-        pygame.draw.lines(screen, (40, 40, 40), True, orbit_points, 1)
-        pygame.draw.circle(screen, BLUE, earth_pos, earth_radius_screen)
+        current_frame = int(frame_index)
+        screen.fill(BLACK)
 
-        # Рисуем хвост, начиная от кадра визуального старта
-        if current_frame > visual_launch_frame:
-            pygame.draw.lines(screen, GREEN, False, screen_trajectory_points[visual_launch_frame:current_frame + 1], 1)
+        # --- Отрисовка ---
+        def to_screen_coords(pos_vec):
+            screen_x = int(offset_x + pos_vec[0] * scale)
+            screen_y = int(offset_y - pos_vec[1] * scale)
+            return screen_x, screen_y
 
+        # Орбита Луны
+        moon_orbit_points = [
+            to_screen_coords(np.array([DISTANCE_EARTH_MOON * np.cos(a), DISTANCE_EARTH_MOON * np.sin(a)])) for a in
+            np.linspace(0, 2 * np.pi, 200)]
+        pygame.draw.lines(screen, (40, 40, 40), True, moon_orbit_points, 1)
+
+        # Орбита НОО
+        # Рисуем, только если она больше 1 пикселя в радиусе
+        if LEO_RADIUS * scale > 1:
+            leo_points = [to_screen_coords(np.array([LEO_RADIUS * np.cos(a), LEO_RADIUS * np.sin(a)])) for a in
+                          np.linspace(0, 2 * np.pi, 100)]
+            pygame.draw.lines(screen, LEO_BLUE, True, leo_points, 1)
+
+        # Земля
+        earth_pos_screen = to_screen_coords(np.array([0, 0]))
+        earth_radius_screen = max(1, int(RADIUS_EARTH * scale))
+        pygame.draw.circle(screen, BLUE, earth_pos_screen, earth_radius_screen)
+
+        # Траектория (рисуется вся, без хаков)
+        if len(rocket_coords) > 1:
+            screen_points = [to_screen_coords(p) for p in rocket_coords[:current_frame + 1]]
+            if len(screen_points) > 1:
+                pygame.draw.lines(screen, GREEN, False, screen_points, 2)
+
+        # Луна
         current_time = timestamps[current_frame]
-        moon_x, moon_y = calculate_moon_position(current_time)
-        moon_pos = to_screen_coords(moon_x, moon_y)
-        moon_radius = max(int(RADIUS_MOON * scale), MIN_MOON_RADIUS_PX)
-        pygame.draw.circle(screen, GRAY, moon_pos, moon_radius)
+        moon_pos_world = calculate_moon_position(current_time)
+        moon_pos_screen = to_screen_coords(np.array(moon_pos_world))
+        moon_radius_screen = max(1, int(RADIUS_MOON * scale))
+        pygame.draw.circle(screen, GRAY, moon_pos_screen, moon_radius_screen)
 
-        rocket_pos = screen_trajectory_points[current_frame]
-        pygame.draw.circle(screen, RED, rocket_pos, 3)
+        # Ракета
+        rocket_pos_screen = to_screen_coords(rocket_coords[current_frame])
+        pygame.draw.circle(screen, RED, rocket_pos_screen, max(2, int(earth_radius_screen * 0.1)))
 
-        flight_time_days = timestamps[current_frame] / (3600 * 24)
-        time_text = font.render(f"Время полета: {flight_time_days:.2f} дней", True, WHITE)
-        screen.blit(time_text, (10, 10))
+        # --- Интерфейс ---
+        info_text = [
+            f"Время: {(timestamps[current_frame] / (3600 * 24)):.2f} дней",
+            "УПРАВЛЕНИЕ:",
+            "  Колесо мыши - Масштаб",
+            "  ЛКМ + Движение - Перемещение",
+            "  Пробел - Пауза"
+        ]
+        if paused: info_text.append(" [ПАУЗА]")
+
+        for i, line in enumerate(info_text):
+            text_surface = font.render(line, True, WHITE)
+            screen.blit(text_surface, (10, 10 + i * 20))
 
         pygame.display.flip()
         clock.tick(60)

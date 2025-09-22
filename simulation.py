@@ -13,13 +13,21 @@ RADIUS_EARTH = 6.371e6
 RADIUS_MOON = 1.737e6
 DISTANCE_EARTH_MOON = 3.844e8
 
+# --- НОВЫЕ КОНСТАНТЫ: Параметры низкой околоземной орбиты (НОО) ---
+LEO_ALTITUDE = 200e3  # Высота НОО - 200 км
+LEO_RADIUS = RADIUS_EARTH + LEO_ALTITUDE
+LEO_VELOCITY = np.sqrt(GRAVITATIONAL_CONSTANT * MASS_EARTH / LEO_RADIUS)
+
 # --- Параметры симуляции ---
-MAX_SIMULATION_TIME = 300000
-TIME_EVALUATION_POINTS = np.linspace(0, MAX_SIMULATION_TIME, 30000)
+MAX_SIMULATION_TIME = 600000  # Увеличим максимальное время, полет стал дольше
+TIME_EVALUATION_POINTS = np.linspace(0, MAX_SIMULATION_TIME, 5000)
 
 # --- Параметры орбиты Луны ---
-PERIOD_MOON_ORBIT = 27.32 * 24 * 3600  # в секундах
+PERIOD_MOON_ORBIT = 27.32 * 24 * 3600
 ANGULAR_VELOCITY_MOON = 2 * np.pi / PERIOD_MOON_ORBIT
+
+RTOL=1e-10
+ATOL=1e-12
 
 
 def calculate_moon_position(time):
@@ -35,9 +43,7 @@ def calculate_moon_gravity_acceleration(rocket_pos_x, rocket_pos_y, moon_pos_x, 
     distance_vec_x = rocket_pos_x - moon_pos_x
     distance_vec_y = rocket_pos_y - moon_pos_y
     distance_to_moon = np.sqrt(distance_vec_x ** 2 + distance_vec_y ** 2)
-
     if distance_to_moon == 0: return 0, 0
-
     accel_x = -GRAVITATIONAL_CONSTANT * MASS_MOON * distance_vec_x / distance_to_moon ** 3
     accel_y = -GRAVITATIONAL_CONSTANT * MASS_MOON * distance_vec_y / distance_to_moon ** 3
     return accel_x, accel_y
@@ -46,9 +52,7 @@ def calculate_moon_gravity_acceleration(rocket_pos_x, rocket_pos_y, moon_pos_x, 
 def calculate_earth_gravity_acceleration(rocket_pos_x, rocket_pos_y):
     """Рассчитывает вектор ускорения ракеты из-за гравитации Земли."""
     distance_to_earth = np.sqrt(rocket_pos_x ** 2 + rocket_pos_y ** 2)
-
     if distance_to_earth == 0: return 0, 0
-
     accel_x = -GRAVITATIONAL_CONSTANT * MASS_EARTH * rocket_pos_x / distance_to_earth ** 3
     accel_y = -GRAVITATIONAL_CONSTANT * MASS_EARTH * rocket_pos_y / distance_to_earth ** 3
     return accel_x, accel_y
@@ -86,165 +90,154 @@ event_rocket_escapes.direction = -1
 def calculate_trajectory_derivatives(time, state_vector):
     """Главная функция для решателя ODE. Рассчитывает производные состояния."""
     pos_x, pos_y, vel_x, vel_y = state_vector
-
     moon_pos_x, moon_pos_y = calculate_moon_position(time)
-
     accel_earth_x, accel_earth_y = calculate_earth_gravity_acceleration(pos_x, pos_y)
     accel_moon_x, accel_moon_y = calculate_moon_gravity_acceleration(pos_x, pos_y, moon_pos_x, moon_pos_y)
-
     total_accel_x = accel_earth_x + accel_moon_x
     total_accel_y = accel_earth_y + accel_moon_y
-
     return [vel_x, vel_y, total_accel_x, total_accel_y]
 
 
-def calculate_optimization_cost(launch_parameters):
-    """Функция стоимости для оптимизатора."""
-    initial_velocity, launch_angle = launch_parameters
-    initial_state_vector = [0, RADIUS_EARTH + 1, initial_velocity * np.cos(launch_angle),
-                            initial_velocity * np.sin(launch_angle)]
+def calculate_hohmann_cost(launch_params):
+    """
+    НОВАЯ ФУНКЦИЯ СТОИМОСТИ: Рассчитывает "штраф" для траектории Хоманна.
+    Цель: минимизировать расстояние до Луны и относительную скорость (Δv для LOI).
+    """
+    start_angle_offset, tli_dv_magnitude = launch_params
 
-    simulation_result = solve_ivp(
-        calculate_trajectory_derivatives,
-        (0, MAX_SIMULATION_TIME),
-        initial_state_vector,
-        t_eval=TIME_EVALUATION_POINTS,
-        method='LSODA',
-        rtol=1e-12,
-        atol=1e-14,
+    # 1. Начальные условия на НОО в момент подачи импульса
+    pos_x0 = LEO_RADIUS * np.cos(start_angle_offset)
+    pos_y0 = LEO_RADIUS * np.sin(start_angle_offset)
+    vel_x0 = -LEO_VELOCITY * np.sin(start_angle_offset)
+    vel_y0 = LEO_VELOCITY * np.cos(start_angle_offset)
+
+    # 2. Применение импульса TLI (Trans-Lunar Injection)
+    # Направление импульса совпадает с вектором скорости на НОО
+    vel_magnitude_before_burn = np.sqrt(vel_x0 ** 2 + vel_y0 ** 2)
+    impulse_dir_x = vel_x0 / vel_magnitude_before_burn
+    impulse_dir_y = vel_y0 / vel_magnitude_before_burn
+
+    vel_x_after_burn = vel_x0 + tli_dv_magnitude * impulse_dir_x
+    vel_y_after_burn = vel_y0 + tli_dv_magnitude * impulse_dir_y
+
+    initial_state = [pos_x0, pos_y0, vel_x_after_burn, vel_y_after_burn]
+
+    # 3. Запуск симуляции
+    sol = solve_ivp(
+        calculate_trajectory_derivatives, (0, MAX_SIMULATION_TIME), initial_state,
+        t_eval=TIME_EVALUATION_POINTS, method='LSODA',
+        rtol=RTOL, atol=ATOL,
         events=[event_rocket_hits_earth, event_rocket_hits_moon, event_rocket_escapes]
     )
 
-    if not simulation_result.success: return np.inf
+    if not sol.success: return np.inf
 
-    rocket_x_coords = simulation_result.y[0]
-    rocket_y_coords = simulation_result.y[1]
-    rocket_vx = simulation_result.y[2]
-    rocket_vy = simulation_result.y[3]
-    timestamps = simulation_result.t
+    # 4. Расчет стоимости (штрафа)
+    moon_x, moon_y = calculate_moon_position(sol.t)
+    distances_to_moon = np.sqrt((sol.y[0] - moon_x) ** 2 + (sol.y[1] - moon_y) ** 2)
 
-    moon_x_coords, moon_y_coords = calculate_moon_position(timestamps)
+    # Если даже близко не подлетели - огромный штраф
+    if np.min(distances_to_moon) > DISTANCE_EARTH_MOON * 0.4: return 1e12
 
-    distances_to_moon_center = np.sqrt((rocket_x_coords - moon_x_coords) ** 2 + (rocket_y_coords - moon_y_coords) ** 2)
-    closest_distance_to_surface = np.min(distances_to_moon_center) - RADIUS_MOON
-    closest_approach_index = np.argmin(distances_to_moon_center)
+    idx_closest = np.argmin(distances_to_moon)
+    min_dist_to_surface = distances_to_moon[idx_closest] - RADIUS_MOON
 
-    velocity_at_closest_x = rocket_vx[closest_approach_index]
-    velocity_at_closest_y = rocket_vy[closest_approach_index]
+    # Если врезались - большой штраф, но не бесконечный, чтобы дать оптимизатору информацию
+    if min_dist_to_surface <= 0: return 1e8 + abs(min_dist_to_surface) * 100
 
-    if closest_distance_to_surface <= 0:
-        landing_velocity_sq = velocity_at_closest_x ** 2 + velocity_at_closest_y ** 2
-        velocity_penalty = landing_velocity_sq * 500
-        return velocity_penalty
+    # Расчет относительной скорости в точке сближения (это и есть Δv для LOI)
+    t_closest = sol.t[idx_closest]
+    moon_angle = ANGULAR_VELOCITY_MOON * t_closest
+    moon_vx = -ANGULAR_VELOCITY_MOON * DISTANCE_EARTH_MOON * np.sin(moon_angle)
+    moon_vy = ANGULAR_VELOCITY_MOON * DISTANCE_EARTH_MOON * np.cos(moon_angle)
 
-    distance_penalty = closest_distance_to_surface ** 2
-    velocity_penalty = (velocity_at_closest_x ** 2 + velocity_at_closest_y ** 2) * 500
+    relative_vx = sol.y[2, idx_closest] - moon_vx
+    relative_vy = sol.y[3, idx_closest] - moon_vy
+    relative_speed_at_closest = np.sqrt(relative_vx ** 2 + relative_vy ** 2)
 
-    return distance_penalty + velocity_penalty
+    # Итоговый штраф: комбинация расстояния и скорости, которую надо погасить
+    distance_penalty = min_dist_to_surface
+    velocity_penalty = relative_speed_at_closest
 
+    # Коэффициенты подобраны, чтобы сбалансировать важность сближения и экономии топлива
+    cost = distance_penalty * 0.1 + velocity_penalty
 
-# simulation.py
-
-# ... (все импорты и остальные функции остаются без изменений) ...
-from scipy.optimize import minimize, differential_evolution
+    return cost
 
 
 def optimize_trajectory():
-    """Запускает двухэтапный процесс оптимизации для поиска лучшей траектории."""
+    """ОБНОВЛЕННАЯ ФУНКЦИЯ ОПТИМИЗАЦИИ для траектории Хоманна."""
+    print("Этап 1: Начало глобальной оптимизации траектории Хоманна...")
 
-    # --- Этап 1: Глобальный поиск с помощью differential_evolution ---
-    print("Этап 1: Начало глобальной параллельной оптимизации...")
-    launch_bounds = [(10800, 11200), (np.pi / 6, np.pi / 2.5)]
+    # Границы поиска: [угол старта (радианы), величина импульса TLI (м/с)]
+    # Теоретический импульс для Хоманна ~3120 м/с. Ищем вокруг этого значения.
+    # Угол старта должен быть "за" Луной, чтобы догнать ее.
+    # Луна движется из квадранта I в II, значит старт должен быть в IV или III.
+    bounds = [(-2 * np.pi, 0), (3050, 3200)]
 
-    # Запускаем глобальный поиск, но с меньшим количеством итераций,
-    # так как нам не нужна идеальная точность, а лишь хорошая отправная точка.
-    coarse_result = differential_evolution(
-        calculate_optimization_cost,
-        launch_bounds,
+    result = differential_evolution(
+        calculate_hohmann_cost,
+        bounds,
         workers=-1,
-        maxiter=50,  # Ограничиваем количество итераций для скорости
-        popsize=15,
-        tol=0.1  # Снижаем требования к точности для этого этапа
+        maxiter=150,  # Увеличим число итераций
+        popsize=20,
+        tol=1e-3,
+        updating='deferred'
     )
 
-    v0_coarse, theta0_coarse = coarse_result.x
-    print(f"Глобальный поиск завершен: v0 ≈ {v0_coarse:.2f} м/с, theta ≈ {np.degrees(theta0_coarse):.2f}°")
-
-    # --- Этап 2: Локальная "полировка" результата с помощью Powell ---
-    print("\nЭтап 2: Начало локальной уточняющей оптимизации...")
-
-    fine_bounds = [
-        (v0_coarse - 50, v0_coarse + 50),
-        (theta0_coarse - np.radians(1), theta0_coarse + np.radians(1))
-    ]
-
-    # Запускаем Powell, который очень эффективен в поиске локального минимума.
-    fine_result = minimize(
-        calculate_optimization_cost,
-        x0=[v0_coarse, theta0_coarse],  # Начинаем с лучшей точки, найденной ранее
-        method='Powell',
-        bounds=fine_bounds,
-        options={'xtol': 1e-4, 'ftol': 1e-4}  # Устанавливаем высокую точность для финала
-    )
-
-    best_velocity, best_angle = fine_result.x
-    min_cost = fine_result.fun
+    best_angle, best_dv = result.x
+    min_cost = result.fun
 
     print(f"\nОптимизация полностью завершена:")
-    print(f"  - Начальная скорость: {best_velocity:.2f} м/с")
-    print(f"  - Угол старта: {np.degrees(best_angle):.2f}°")
-    print(f"  - Минимальный штраф: {min_cost:.2f}")
+    print(f"  - Оптимальный угол старта на НОО: {np.degrees(best_angle):.2f}°")
+    print(f"  - Оптимальный импульс TLI: {best_dv:.2f} м/с")
+    print(f"  - Минимальный штраф (целевая функция): {min_cost:.2f}")
 
-    return best_velocity, best_angle
+    return best_angle, best_dv
 
 
-def generate_flight_summary_table(initial_velocity, launch_angle, num_points=100):
-    """Создает таблицу (DataFrame) с ключевыми параметрами полета."""
-    initial_state_vector = [0, RADIUS_EARTH + 1, initial_velocity * np.cos(launch_angle),
-                            initial_velocity * np.sin(launch_angle)]
+def generate_flight_summary_table(start_angle, tli_dv, num_points=15):
+    """ОБНОВЛЕННАЯ ФУНКЦИЯ: Создает таблицу с ключевыми параметрами полета."""
+    # Расчет начального состояния после импульса TLI (аналогично cost-функции)
+    pos_x0 = LEO_RADIUS * np.cos(start_angle)
+    pos_y0 = LEO_RADIUS * np.sin(start_angle)
+    vel_x0 = -LEO_VELOCITY * np.sin(start_angle)
+    vel_y0 = LEO_VELOCITY * np.cos(start_angle)
+    vel_mag = np.sqrt(vel_x0 ** 2 + vel_y0 ** 2)
+    dir_x, dir_y = vel_x0 / vel_mag, vel_y0 / vel_mag
 
-    final_time_points = np.linspace(0, MAX_SIMULATION_TIME, 5000)
+    initial_state_vector = [
+        pos_x0, pos_y0,
+        vel_x0 + tli_dv * dir_x,
+        vel_y0 + tli_dv * dir_y
+    ]
 
+    # Симуляция с высокой точностью для итоговой траектории
     simulation_result = solve_ivp(
-        calculate_trajectory_derivatives,
-        (0, MAX_SIMULATION_TIME),
-        initial_state_vector,
-        t_eval=final_time_points,
-        method='LSODA',
-        rtol=1e-12,
-        atol=1e-14,
+        calculate_trajectory_derivatives, (0, MAX_SIMULATION_TIME), initial_state_vector,
+        t_eval=np.linspace(0, MAX_SIMULATION_TIME, 5000),
+        method='LSODA', rtol=RTOL, atol=ATOL,
         events=[event_rocket_hits_earth, event_rocket_hits_moon, event_rocket_escapes]
     )
 
-    if not simulation_result.success and len(simulation_result.t_events[0]) == 0 and len(
-            simulation_result.t_events[1]) == 0 and len(simulation_result.t_events[2]) == 0:
-        raise ValueError("Интеграция не удалась и не было событий!")
+    if not simulation_result.success:
+        print("Внимание: финальная интеграция не удалась.")
+        if not simulation_result.t.size: return pd.DataFrame()
 
-    x_coords, y_coords, vx, vy = simulation_result.y
-    timestamps = simulation_result.t
+    x, y, vx, vy = simulation_result.y
+    t = simulation_result.t
+    total_points = len(t)
+    indices = np.linspace(0, total_points - 1, num_points, dtype=int)
 
-    total_points = len(timestamps)
-    if total_points < num_points: num_points = total_points
-    if total_points == 0: return pd.DataFrame()
+    moon_x, moon_y = calculate_moon_position(t[indices])
 
-    selected_indices = np.linspace(0, total_points - 1, num_points, dtype=int)
+    dist_moon_surf_km = (np.sqrt((x[indices] - moon_x) ** 2 + (y[indices] - moon_y) ** 2) - RADIUS_MOON) / 1000
+    flight_speeds_ms = np.sqrt(vx[indices] ** 2 + vy[indices] ** 2)
+    dist_earth_surf_km = (np.sqrt(x[indices] ** 2 + y[indices] ** 2) - RADIUS_EARTH) / 1000
 
-    selected_times = timestamps[selected_indices]
-
-    moon_x_at_times, moon_y_at_times = calculate_moon_position(selected_times)
-
-    distances_to_moon_surface_km = (np.sqrt((x_coords[selected_indices] - moon_x_at_times) ** 2 +
-                                            (y_coords[selected_indices] - moon_y_at_times) ** 2) - RADIUS_MOON) / 1000
-
-    flight_speeds_ms = np.sqrt(vx[selected_indices] ** 2 + vy[selected_indices] ** 2)
-    distances_from_earth_surface_km = (np.sqrt(
-        x_coords[selected_indices] ** 2 + y_coords[selected_indices] ** 2) - RADIUS_EARTH) / 1000
-
-    summary_table = pd.DataFrame({
-        "Время полета (с)": selected_times.astype(int),
-        "Скорость (м/с)": flight_speeds_ms,
-        "Высота над Землей (км)": distances_from_earth_surface_km,
-        "Высота над Луной (км)": distances_to_moon_surface_km
+    return pd.DataFrame({
+        "Время полета (дни)": t[indices] / (3600 * 24),
+        "Скорость (км/с)": flight_speeds_ms / 1000,
+        "Высота над Землей (тыс.км)": dist_earth_surf_km / 1000,
+        "Высота над Луной (тыс.км)": dist_moon_surf_km / 1000
     })
-
-    return summary_table
