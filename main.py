@@ -1,10 +1,3 @@
-"""
-lunar_lander_pygame.py
-
-Анимация посадки на Луну.
-Добавлено замедление воспроизведения (time_scale), чтобы ракета не приземлялась мгновенно.
-"""
-
 import math
 import sys
 import numpy as np
