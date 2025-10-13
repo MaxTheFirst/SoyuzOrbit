@@ -1,3 +1,4 @@
 .env
 .venv/*
 positions_relative_eq.csv
+positions_relative_eq.csv
