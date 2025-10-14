@@ -27,10 +27,15 @@ if __name__ == "__main__":
         exit()
 
     average_speed = CalculateAverageSpeed(df=df, spacings=spacings)
-    if config.GENERATION_MODE == 'uniform':
-        DifferenceBetweenTheoreticalAndSimulatedSpeed(simulated_speed=average_speed)
+    DifferenceBetweenTheoreticalAndSimulatedSpeed(
+        simulated_speed=average_speed,
+        masses=masses,
+        spring_constants=spring_constants,
+        spacings=spacings
+    )
 
     plot_all_data_about_block(df=df, spacings=spacings, block_index=99)
 
     positions_data, velocities_data, accelerations_data = preprocess_data(filename=config.CSV_FILENAME)
-    run_animation(positions_df=positions_data, spacings=spacings, velocities_df=velocities_data, accelerations_df=accelerations_data)
+    run_animation(positions_df=positions_data, spacings=spacings, velocities_df=velocities_data,
+                  accelerations_df=accelerations_data)
