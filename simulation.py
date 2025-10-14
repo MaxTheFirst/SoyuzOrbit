@@ -1,5 +1,4 @@
 import csv
-import math
 from typing import List
 from block import Block
 import config
