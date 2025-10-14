@@ -1,0 +1,10 @@
+[project]
+name = "cepoczki"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.10.7",
+    "pandas>=2.3.3",
+    "pygame>=2.6.1",
+]
