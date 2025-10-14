@@ -3,8 +3,8 @@ NUM_BLOCKS = 100  # Количество блоков
 # Выберите режим генерации: 'uniform' (все одинаковые) или 'random' (случайные)
 GENERATION_MODE = 'uniform'
 
-DEFAULT_MASS = 0.1  # Масса одного блока (кг)
-DEFAULT_SPRING_CONSTANT = 2.0  # Жесткость пружин (Н/м)
+DEFAULT_MASS = 1  # Масса одного блока (кг)
+DEFAULT_SPRING_CONSTANT = 20.0  # Жесткость пружин (Н/м)
 DEFAULT_BLOCK_SPACING = 1.0  # Равновесное расстояние между блоками (м)
 
 # Параметры симуляции
@@ -18,7 +18,7 @@ BLOCK_TO_DISPLACE = 0  # Индекс блока для начального с�
 INITIAL_DISPLACEMENT = 0.5  # Начальное смещение от положения равновесия (м)
 
 # --- Флаг и параметры для затухания (трения) ---
-ENABLE_DAMPING = True  # Поставьте False, чтобы отключить трение
+ENABLE_DAMPING = False  # Поставьте False, чтобы отключить трение
 if ENABLE_DAMPING:
     # Это примерное время в секундах, за которое амплитуда волны упадёт в ~2.7 раза.
     DECAY_TIME_SECONDS = 10.0

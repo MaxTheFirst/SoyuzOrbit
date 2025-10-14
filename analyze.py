@@ -2,7 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pandas import DataFrame
 
-import config
+
+# import config
 
 
 def plot_block_data(df: DataFrame, spacings: list[float], block_index: int, column_name: str, title: str,
@@ -54,7 +55,7 @@ def plot_block_acceleration(df: DataFrame, spacings: list[float], block_index: i
     Фильтрует данные для одного блока и строит график ускорения.
     """
     plot_block_data(df=df, spacings=spacings, block_index=block_index, column_name="acceleration",
-                    title=f"Ускорение блока №{block_index}", ylabel="Ускорение (м/с^2)")
+                    title=f"Ускорение блока №{block_index}", ylabel="Ускорение (м/с²)")
 
 
 def plot_all_data_about_block(df: DataFrame, spacings: list[float], block_index: int) -> None:
