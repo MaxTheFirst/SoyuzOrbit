@@ -113,7 +113,8 @@ def CalculateAverageSpeed(df: DataFrame, spacings: list[float]) -> float:
     return float(avg_speed)
 
 
-def DifferenceBetweenTheoreticalAndSimulatedSpeed(simulated_speed: float) -> float:
+def DifferenceBetweenTheoreticalAndSimulatedSpeed(simulated_speed: float, masses: list[float],
+                                                  spring_constants: list[float], spacings: list[float]):
     """
     Вычисляет процентное отклонение между теоретической и смоделированной скоростью.
     """
@@ -126,4 +127,14 @@ def DifferenceBetweenTheoreticalAndSimulatedSpeed(simulated_speed: float) -> flo
         theoretical_speed = a * np.sqrt(k / mass)
         print("--------------------------")
         print(f"Theoretical Speed (for uniform case): {theoretical_speed:.4f} m/s")
+        print(f"Difference from average: {abs(simulated_speed - theoretical_speed):.4f} m/s")
+    elif config.GENERATION_MODE == 'random':
+        # Для случайной системы используем средние значения
+        mass = float(np.mean([m for m in masses]))
+        k = float(np.mean([k for k in spring_constants]))
+        a = float(np.mean([s for s in spacings]))
+
+        theoretical_speed = a * np.sqrt(k / mass)
+        print("--------------------------")
+        print(f"Theoretical Speed (using average properties): {theoretical_speed:.4f} m/s")
         print(f"Difference from average: {abs(simulated_speed - theoretical_speed):.4f} m/s")

@@ -1,7 +1,7 @@
 NUM_BLOCKS = 100  # Количество блоков
 
 # Выберите режим генерации: 'uniform' (все одинаковые) или 'random' (случайные)
-GENERATION_MODE = 'uniform'
+GENERATION_MODE = 'random'
 
 DEFAULT_MASS = 1  # Масса одного блока (кг)
 DEFAULT_SPRING_CONSTANT = 20.0  # Жесткость пружин (Н/м)

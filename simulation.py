@@ -1,5 +1,4 @@
 import csv
-from typing import List
 from block import Block
 import config
 
@@ -35,7 +34,7 @@ class ChainSimulation:
     Управляет симуляцией цепочки блоков и пружин.
     """
 
-    def __init__(self, masses: List[float], spring_constants: List[float], spacings: List[float]):
+    def __init__(self, masses: list[float], spring_constants: list[float], spacings: list[float]):
         """
         Инициализирует симуляцию с заданными физическими свойствами.
         """
@@ -47,7 +46,7 @@ class ChainSimulation:
         self.logger = DataLogger(config.CSV_FILENAME)
         self.time = 0.0
 
-    def _create_blocks(self) -> List[Block]:
+    def _create_blocks(self) -> list[Block]:
         """Создает список блоков в их равновесных позициях."""
 
         blocks_list = []
@@ -59,7 +58,7 @@ class ChainSimulation:
             blocks_list.append(block)
         return blocks_list
 
-    def _calculate_forces(self) -> List[float]:
+    def _calculate_forces(self) -> list[float]:
         """Рассчитывает силы, действующие на каждый блок."""
         forces = [0.0] * config.NUM_BLOCKS
 
