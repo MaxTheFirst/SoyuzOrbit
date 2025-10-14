@@ -3,7 +3,7 @@ import pandas as pd
 
 import config
 from system_builder import build_system
-from analyze import get_all_data_about_block
+from analyze import plot_all_data_about_block
 from simulation import ChainSimulation
 from visualisation_demo import preprocess_data, run_animation
 
@@ -25,7 +25,7 @@ if __name__ == "__main__":
         print("Error: simulation_data.csv not found. Please run main.py first.")
         exit()
 
-    get_all_data_about_block(df=df, spacings=spacings, block_index=99)
+    plot_all_data_about_block(df=df, spacings=spacings, block_index=99)
 
     positions_data, velocities_data, accelerations_data = preprocess_data(filename=config.CSV_FILENAME)
     run_animation(positions_df=positions_data, spacings=spacings, velocities_df=velocities_data, accelerations_df=accelerations_data)

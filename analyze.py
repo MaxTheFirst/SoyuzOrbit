@@ -57,7 +57,7 @@ def plot_block_acceleration(df: DataFrame, spacings: list[float], block_index: i
                     title=f"Ускорение блока №{block_index}", ylabel="Ускорение (м/с^2)")
 
 
-def get_all_data_about_block(df: DataFrame, spacings: list[float], block_index: int) -> None:
+def plot_all_data_about_block(df: DataFrame, spacings: list[float], block_index: int) -> None:
     """
     Фильтрует данные для одного блока и возвращает их в виде графиков
     """
