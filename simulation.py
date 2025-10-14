@@ -1,4 +1,5 @@
 import csv
+import math
 from typing import List
 from block import Block
 import config
@@ -35,26 +36,33 @@ class ChainSimulation:
     Управляет симуляцией цепочки блоков и пружин.
     """
 
-    def __init__(self):
+    def __init__(self, masses: List[float], spring_constants: List[float], spacings: List[float]):
+        """
+        Инициализирует симуляцию с заданными физическими свойствами.
+        """
+        self.masses = masses
+        self.spring_constants = spring_constants
+        self.spacings = spacings
+
         self.blocks = self._create_blocks()
         self.logger = DataLogger(config.CSV_FILENAME)
         self.time = 0.0
 
-    @staticmethod
-    def _create_blocks() -> List[Block]:
+    def _create_blocks(self) -> List[Block]:
         """Создает список блоков в их равновесных позициях."""
 
-        # Замечание: начало координат - первый блок
-        return [
-            Block(mass=config.MASS, initial_position=index * config.BLOCK_SPACING)
-            for index in range(1, config.NUM_BLOCKS + 1)
-        ]
+        blocks_list = []
+        current_pos = 0.0
+        for i in range(config.NUM_BLOCKS):
+            # Равновесная позиция i-го блока - это сумма всех расстояний до него
+            current_pos += self.spacings[i]
+            block = Block(mass=self.masses[i], initial_position=current_pos)
+            blocks_list.append(block)
+        return blocks_list
 
     def _calculate_forces(self) -> List[float]:
         """Рассчитывает силы, действующие на каждый блок."""
         forces = [0.0] * config.NUM_BLOCKS
-        k = config.SPRING_CONSTANT
-        spacing = config.BLOCK_SPACING
 
         # Рассчитываем силы для всех блоков, кроме крайних
         for i in range(1, config.NUM_BLOCKS - 1):
@@ -68,26 +76,38 @@ class ChainSimulation:
             # = k * (pos_left - init_pos_left - pos_current + init_pos_left + spacing)
             # = k * (pos_left - pos_current + spacing)
 
-            force_left = k * (pos_left - pos_current + spacing)
-            force_right = k * (pos_right - pos_current - spacing)
+            force_left = self.spring_constants[i] * round(pos_left - pos_current + self.spacings[i],
+                                                          config.DECIMAL_PLACES)
+            force_right = self.spring_constants[i + 1] * round(pos_right - pos_current - self.spacings[i + 1],
+                                                               config.DECIMAL_PLACES)
             forces[i] = force_left + force_right
 
         # Сила для первого блока (учитывая левую стенку)
         pos_left = 0.0
-        pos_current = self.blocks[0].position # equivalents to zero
+        pos_current = self.blocks[0].position  # equivalents to zero
         pos_right = self.blocks[1].position
-        force_from_left_wall = k * (pos_left - pos_current + spacing)  # Пружина между стеной (в 0) и блоком
-        force_from_right = k * (pos_right - pos_current - spacing)
+        force_from_left_wall = self.spring_constants[0] * round(
+            pos_left - pos_current + self.spacings[0], config.DECIMAL_PLACES)  # Пружина между стеной (в 0) и блоком
+        force_from_right = self.spring_constants[1] * round(pos_right - pos_current - self.spacings[0],
+                                                            config.DECIMAL_PLACES)
         forces[0] = force_from_left_wall + force_from_right
 
         # Сила для последнего блока (учитывая правую стенку)
         pos_left = self.blocks[config.NUM_BLOCKS - 2].position
         pos_current = self.blocks[config.NUM_BLOCKS - 1].position
-        pos_right = (config.NUM_BLOCKS + 1) * spacing
+        pos_right = sum(self.spacings)
 
-        force_from_left = k * (pos_left - pos_current + spacing)
-        force_from_left_wall = k * (pos_right - pos_current - spacing)
+        force_from_left = self.spring_constants[config.NUM_BLOCKS - 1] * round(
+            pos_left - pos_current + self.spacings[config.NUM_BLOCKS - 1], config.DECIMAL_PLACES)
+        force_from_left_wall = self.spring_constants[config.NUM_BLOCKS] * round(
+            pos_right - pos_current - self.spacings[config.NUM_BLOCKS], config.DECIMAL_PLACES)
         forces[config.NUM_BLOCKS - 1] = force_from_left + force_from_left_wall
+
+        # --- Теперь добавляем опциональные силы, если флаги включены ---
+
+        if config.ENABLE_DAMPING:
+            for i in range(config.NUM_BLOCKS):
+                forces[i] += -config.DAMPING_COEFFICIENT * self.blocks[i].velocity
 
         return forces
 
