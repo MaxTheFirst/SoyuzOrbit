@@ -124,13 +124,13 @@ def run_animation(positions_df: pd.DataFrame, spacings: list[float], velocities_
         centering_offset = (effective_screen_width - (total_chain_length * final_scale)) / 2
         view_offset = centering_offset + pan_offset_x
 
-        # --- НОВЫЙ БЛОК: Подготовка всего текста для вывода ---
+        # --- Подготовка всего текста для вывода ---
         time_surface = font.render(f"Time: {timestamp:.2f} s", True, TEXT_COLOR)
         amplitude_surface = font.render(f"Max Displacement: {current_amplitude:.4f} m", True, TEXT_COLOR)
         velocity_surface = font.render(f"Max Velocity: {current_max_velocity:.4f} m/s", True, TEXT_COLOR)
         acceleration_surface = font.render(f"Max Acceleration: {current_max_acceleration:.4f} m/s²", True, TEXT_COLOR)
 
-        # ... (код отрисовки геометрии остаётся прежним) ...
+        # код отрисовки геометрии остаётся прежним
         left_wall_x = view_offset
         right_wall_x = view_offset + (total_chain_length * final_scale)
         pygame.draw.line(screen, WALL_COLOR, (left_wall_x, Y_POSITION - 20 * current_zoom),
@@ -146,7 +146,7 @@ def run_animation(positions_df: pd.DataFrame, spacings: list[float], velocities_
         for x_pos in screen_positions:
             pygame.draw.circle(screen, BLOCK_COLOR, (x_pos, Y_POSITION), block_radius)
 
-        # --- НОВЫЙ БЛОК: Вывод всего текста на экран ---
+        # --- Вывод всего текста на экран ---
         screen.blit(time_surface, (20, 20))
         screen.blit(amplitude_surface, (20, 50))
         screen.blit(velocity_surface, (20, 80))

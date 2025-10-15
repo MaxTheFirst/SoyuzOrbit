@@ -60,7 +60,7 @@ def CalculateAverageSpeed(df: DataFrame, spacings: list[float]) -> float:
     # np.cumsum создает массив [spacing0, spacing0+spacing1, ...]
     equilibrium_positions = np.cumsum(spacings[:config.NUM_BLOCKS])
 
-    # 3. Вычисление времен прибытия волны
+    # 2. Вычисление времен прибытия волны
     arrival_times = calculate_arrival_times(df, equilibrium_positions)
 
     if len(arrival_times) < 2:
@@ -71,7 +71,7 @@ def CalculateAverageSpeed(df: DataFrame, spacings: list[float]) -> float:
         print("Error: Counterintuitive data")
         sys.exit()
 
-    # 4. Расчет локальных скоростей
+    # 3. Расчет локальных скоростей
     local_speeds = []
 
     # Устанавливаем диапазон для анализа, чтобы игнорировать "шум" в начале и конце
@@ -96,7 +96,7 @@ def CalculateAverageSpeed(df: DataFrame, spacings: list[float]) -> float:
             local_speed = delta_x / delta_t
             local_speeds.append(local_speed)
 
-    # 5. Анализ и вывод результатов
+    # 4. Анализ и вывод результатов
     if not local_speeds:
         print("Could not calculate any local speeds.")
         sys.exit()
@@ -136,5 +136,5 @@ def DifferenceBetweenTheoreticalAndSimulatedSpeed(simulated_speed: float, masses
 
         theoretical_speed = a * np.sqrt(k / mass)
         print("--------------------------")
-        print(f"Theoretical Speed (using average properties): {theoretical_speed:.4f} m/s")
+        print(f"Theoretical Speed (for random case): {theoretical_speed:.4f} m/s")
         print(f"Difference from average: {abs(simulated_speed - theoretical_speed):.4f} m/s")
