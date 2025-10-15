@@ -18,7 +18,7 @@ BLOCK_TO_DISPLACE = 0  # Индекс блока для начального с�
 INITIAL_DISPLACEMENT = 0.5  # Начальное смещение от положения равновесия (м)
 
 # --- Флаг и параметры для затухания (трения) ---
-ENABLE_DAMPING = False  # Поставьте False, чтобы отключить трение
+ENABLE_DAMPING = False
 if ENABLE_DAMPING:
     # Это примерное время в секундах, за которое амплитуда волны упадёт в ~2.7 раза.
     DECAY_TIME_SECONDS = 10.0
