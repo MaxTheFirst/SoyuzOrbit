@@ -1,9 +1,12 @@
 # system_builder.py
 import random
+
+import numpy as np
+
 import config
 
 
-def print_generated_data(masses: list[float], spring_constants: list[float], spacings: list[float]):
+def print_generated_data(masses: np.ndarray, spring_constants: np.ndarray, spacings: np.ndarray) -> None:
     # Выводим сгенерированные значения для информации
     print("\n--- Generated Masses ---")
     print([f"{m:.2f}" for m in masses])
@@ -20,10 +23,10 @@ def generate_uniform_properties(num_blocks: int):
     """
     print("Generating UNIFORM system properties...")
     # Задаем "стандартные" значения здесь
-    masses = [config.DEFAULT_MASS] * num_blocks
+    masses = np.full(num_blocks, config.DEFAULT_MASS)
     # Нужно N+1 пружин и расстояний (включая те, что крепятся к стенам)
-    spring_constants = [config.DEFAULT_SPRING_CONSTANT] * (num_blocks + 1)
-    spacings = [config.DEFAULT_BLOCK_SPACING] * (num_blocks + 1)
+    spring_constants = np.full(num_blocks + 1, config.DEFAULT_SPRING_CONSTANT)
+    spacings = np.full(num_blocks + 1, config.DEFAULT_BLOCK_SPACING)
 
     # Выводим сгенерированные значения для информации
     print_generated_data(masses, spring_constants, spacings)
@@ -41,6 +44,10 @@ def generate_random_properties(num_blocks: int):
                         in range(num_blocks + 1)]
     spacings = [random.uniform(config.DEFAULT_BLOCK_SPACING * 0.8, config.DEFAULT_BLOCK_SPACING * 1.2) for _ in
                 range(num_blocks + 1)]
+
+    masses = np.array(masses)
+    spring_constants = np.array(spring_constants)
+    spacings = np.array(spacings)
 
     # Выводим сгенерированные значения для информации
     print_generated_data(masses, spring_constants, spacings)

@@ -1,6 +1,7 @@
 import csv
-from block import Block
-from spring import Spring
+
+import numpy as np
+
 import config
 
 
@@ -15,16 +16,20 @@ class DataLogger:
         # Записываем заголовки
         self.writer.writerow(['time', 'block_index', 'position', 'velocity', 'acceleration', 'kinetic_energy'])
 
-    def log(self, time: float, block_index: int, block: Block):
+    def log(self, time: float, num_blocks: int, pos_arr: np.ndarray, vel_arr: np.ndarray, acc_arr: np.ndarray,
+            ke_arr: np.ndarray):
         """Записывает одну строку данных."""
-        self.writer.writerow([
-            f"{time:.4f}",
-            block_index,
-            f"{block.position:.6f}",
-            f"{block.velocity:.6f}",
-            f"{block.acceleration:.6f}",
-            f"{block.kinetic_energy:.6f}"
-        ])
+        rows = []
+        for i in range(num_blocks):
+            rows.append([
+                f"{time:.4f}",
+                i,
+                f"{pos_arr[i]:.6f}",
+                f"{vel_arr[i]:.6f}",
+                f"{acc_arr[i]:.6f}",
+                f"{ke_arr[i]:.6f}"
+            ])
+        self.writer.writerows(rows)
 
     def close(self):
         """Закрывает файл."""
@@ -59,163 +64,153 @@ class ChainSimulation:
     Управляет симуляцией цепочки блоков и пружин.
     """
 
-    def __init__(self, masses: list[float], spring_constants: list[float], spacings: list[float]):
+    def __init__(self, masses: np.ndarray, spring_constants: np.ndarray, spacings: np.ndarray):
         """
         Инициализирует симуляцию с заданными физическими свойствами.
         """
         self.masses = masses
+        self.positions = np.cumsum(spacings[:-1])  # Равновесные позиции
+        self.velocities = np.zeros(config.NUM_BLOCKS)
+        self.accelerations = np.zeros(config.NUM_BLOCKS)
+
         self.spring_constants = spring_constants
         self.spacings = spacings
 
-        self.blocks = self._create_blocks()
-        self.springs = self._create_springs()
-        self.logger = DataLogger(config.CSV_SIMULATION_FILENAME)
+        self.right_wall_pos = np.sum(spacings)
+
+        self.kinetic_energies = np.zeros(config.NUM_BLOCKS)
+        self.potential_energies = np.zeros(config.NUM_BLOCKS + 1)
+        self.total_kinetic_energy = 0.0
+        self.total_potential_energy = 0.0
+        self.total_energy = 0.0
+
+        self.data_logger = DataLogger(config.CSV_SIMULATION_FILENAME)
         self.energy_logger = EnergyLogger(config.CSV_ENERGY_DATA_FILENAME)
+
         self.time = 0.0
-
-    def _create_blocks(self) -> list[Block]:
-        """Создает список блоков в их равновесных позициях."""
-
-        blocks_list = []
-        current_pos = 0.0
-        for i in range(config.NUM_BLOCKS):
-            # Равновесная позиция i-го блока - это сумма всех расстояний до него
-            current_pos += self.spacings[i]
-            block = Block(
-                mass=self.masses[i],
-                initial_position=current_pos
-            )
-            blocks_list.append(block)
-        return blocks_list
-
-    def _create_springs(self) -> list[Spring]:
-        """Создает список пружин."""
-        springs_list = []
-        # У нас N блоков и N+1 пружина (включая те, что крепятся к стенам)
-        for i in range(config.NUM_BLOCKS + 1):
-            spring = Spring(
-                spring_constant=self.spring_constants[i],
-                equilibrium_length=self.spacings[i]
-            )
-            springs_list.append(spring)
-        return springs_list
 
     def _update_energies(self):
         """Рассчитывает и обновляет общую энергию системы."""
-        # 1. Кинетическая энергия (просто суммируем энергии всех блоков)
-        self.total_kinetic_energy = sum(block.kinetic_energy for block in self.blocks)
+        # --- 1. Кинетическая энергия ---
+        self.kinetic_energies = 0.5 * self.masses * (self.velocities ** 2)
+        self.total_kinetic_energy = np.sum(self.kinetic_energies)
 
-        # 2. Потенциальная энергия (обновляем и суммируем энергии пружин)
-        # Первая пружина (между левой стеной и первым блоком)
-        pos_1 = 0.0
-        pos_2 = self.blocks[0].position
-        self.springs[0].update_energy(pos_1, pos_2)
+        # --- 2. Потенциальная энергия ---
 
-        # Пружины между блоками
-        for i in range(1, config.NUM_BLOCKS):
-            pos1 = self.blocks[i - 1].position
-            pos2 = self.blocks[i].position
-            self.springs[i].update_energy(pos1, pos2)
+        # Создаем массив позиций ВСЕХ точек крепления пружин
+        # [левая стена, блок 0, блок 1, ..., блок N-1, правая стена]
+        all_points_pos = np.concatenate(([0.0], self.positions, [self.right_wall_pos]))
 
-        # Последняя пружина (между последним блоком и правой стеной)
-        pos_1 = self.blocks[-1].position
-        pos_2 = sum(self.spacings)
-        self.springs[-1].update_energy(pos_1, pos_2)
+        # Рассчитываем текущие длины всех N+1 пружин (pos[i+1] - pos[i])
+        current_lengths = np.diff(all_points_pos)
 
-        self.total_potential_energy = sum(s.potential_energy for s in self.springs)
+        # Рассчитываем деформацию
+        deformations = current_lengths - self.spacings
 
-        # 3. Полная энергия
+        # Рассчитываем энергию
+        self.potential_energies = 0.5 * self.spring_constants * (deformations ** 2)
+        self.total_potential_energy = np.sum(self.potential_energies)
+
+        # --- 3. Полная энергия ---
         self.total_energy = self.total_kinetic_energy + self.total_potential_energy
 
-    def _calculate_forces(self) -> list[float]:
+    def _calculate_forces(self) -> np.ndarray:
         """Рассчитывает силы, действующие на каждый блок."""
-        forces = [0.0] * config.NUM_BLOCKS
 
-        # Рассчитываем силы для всех блоков, кроме крайних
-        for i in range(1, config.NUM_BLOCKS - 1):
-            pos_current = self.blocks[i].position
-            pos_left = self.blocks[i - 1].position
-            pos_right = self.blocks[i + 1].position
+        # --- 1. Готовим "соседние" массивы ---
 
-            # force_left = -k * (delta_pos_current - delta_pos_left) =
-            # = k * (delta_pos_left - delta_pos_current) =
-            # = k * (pos_left - init_pos_left - (pos_current - init_pos_current)) =
-            # = k * (pos_left - init_pos_left - pos_current + init_pos_left + spacing)
-            # = k * (pos_left - pos_current + spacing)
+        # Позиции "левых" соседей для каждого блока
+        # [левая стена (0.0), блок 0, блок 1, ..., блок N-2]
+        pos_left = np.concatenate(([0.0], self.positions[:-1]))
 
-            force_left = self.spring_constants[i] * round(pos_left - pos_current + self.spacings[i],
-                                                          config.DECIMAL_PLACES)
-            force_right = self.spring_constants[i + 1] * round(pos_right - pos_current - self.spacings[i + 1],
-                                                               config.DECIMAL_PLACES)
-            forces[i] = force_left + force_right
+        # Позиции "правых" соседей для каждого блока
+        # [блок 1, блок 2, ..., блок N-1, правая стена]
+        pos_right = np.concatenate((self.positions[1:], [self.right_wall_pos]))
 
-        # Сила для первого блока (учитывая левую стенку)
-        pos_left = 0.0
-        pos_current = self.blocks[0].position  # equivalents to zero
-        pos_right = self.blocks[1].position
-        force_from_left_wall = self.spring_constants[0] * round(
-            pos_left - pos_current + self.spacings[0], config.DECIMAL_PLACES)  # Пружина между стеной (в 0) и блоком
-        force_from_right = self.spring_constants[1] * round(pos_right - pos_current - self.spacings[0],
-                                                            config.DECIMAL_PLACES)
-        forces[0] = force_from_left_wall + force_from_right
+        # --- 2. Рассчитываем силы от пружин ---
 
-        # Сила для последнего блока (учитывая правую стенку)
-        pos_left = self.blocks[config.NUM_BLOCKS - 2].position
-        pos_current = self.blocks[config.NUM_BLOCKS - 1].position
-        pos_right = sum(self.spacings)
+        # Силы от N левых пружин (k_0 ... k_N-1)
+        k_left = self.spring_constants[:-1]
+        spacing_left = self.spacings[:-1]
+        force_left = k_left * (pos_left - self.positions + spacing_left)
 
-        force_from_left = self.spring_constants[config.NUM_BLOCKS - 1] * round(
-            pos_left - pos_current + self.spacings[config.NUM_BLOCKS - 1], config.DECIMAL_PLACES)
-        force_from_left_wall = self.spring_constants[config.NUM_BLOCKS] * round(
-            pos_right - pos_current - self.spacings[config.NUM_BLOCKS], config.DECIMAL_PLACES)
-        forces[config.NUM_BLOCKS - 1] = force_from_left + force_from_left_wall
+        # Силы от N правых пружин (k_1 ... k_N)
+        k_right = self.spring_constants[1:]
+        spacing_right = self.spacings[1:]
+        force_right = k_right * (pos_right - self.positions - spacing_right)
 
-        # --- Теперь добавляем опциональные силы, если флаги включены ---
+        # Суммарная сила
+        forces = force_left + force_right
 
+        # --- 3. Добавляем затухание (если включено) ---
         if config.ENABLE_DAMPING:
-            for i in range(config.NUM_BLOCKS):
-                forces[i] += -config.DAMPING_COEFFICIENT * self.blocks[i].velocity
+            forces -= config.DAMPING_COEFFICIENT * self.velocities
 
         return forces
 
+    def _update_state(self, time_step: float):
+        """Обновляет состояние всех блоков (алгоритм Верле, векторизованно)."""
+
+        # Обновляем положения
+        self.positions += self.velocities * time_step + 0.5 * self.accelerations * (time_step ** 2)
+
+        # Рассчитываем новые силы на основе новых положений
+        forces = self._calculate_forces()
+
+        # Рассчитываем новые ускорения
+        new_accelerations = forces / self.masses
+
+        # Обновляем скорости
+        self.velocities += 0.5 * (self.accelerations + new_accelerations) * time_step
+
+        # Сохраняем новые ускорения
+        self.accelerations = new_accelerations
+
     def run(self):
         """Запускает главный цикл симуляции."""
-        print("Starting simulation...")
+        print("Starting simulation (NumPy optimized)...")
 
-        # Задаем начальное условие: смещаем первый блок
-        self.blocks[config.BLOCK_TO_DISPLACE].position += config.INITIAL_DISPLACEMENT
+        # Задаем начальное условие
+        self.positions[config.BLOCK_TO_DISPLACE] += config.INITIAL_DISPLACEMENT
 
         log_interval = 1.0 / config.SAMPLES_PER_SECOND
         next_log_time = 0.0
 
+        initial_forces = self._calculate_forces()
+        self.accelerations = initial_forces / self.masses
+
+        # Рассчитаем начальную энергию
         self._update_energies()
 
         while self.time <= config.SIMULATION_DURATION:
-            # Расчет сил
-            forces = self._calculate_forces()
-
-            # Обновление состояния каждого блока
-            for i, block in enumerate(self.blocks):
-                block.update(forces[i], config.TIME_STEP)
-
-            self.energy_logger.log(
-                self.time,
-                self.total_kinetic_energy,
-                self.total_potential_energy,
-                self.total_energy
-            )
-
+            self._update_state(config.TIME_STEP)
             self._update_energies()
 
-            # Запись данных в CSV по расписанию
             if self.time >= next_log_time:
-                for i, block in enumerate(self.blocks):
-                    self.logger.log(self.time, i, block)
+                # Логируем снимок состояния
+                self.data_logger.log(
+                    self.time, config.NUM_BLOCKS,
+                    self.positions, self.velocities,
+                    self.accelerations, self.kinetic_energies
+                )
+
+                # Логируем данные об энергии
+                self.energy_logger.log(
+                    self.time,
+                    self.total_kinetic_energy,
+                    self.total_potential_energy,
+                    self.total_energy
+                )
+                print(
+                    f"Time: {self.time:.2f}s | "
+                    f"Total Energy: {self.total_energy:.4f} J "
+                    f"(KE: {self.total_kinetic_energy:.4f}, PE: {self.total_potential_energy:.4f})",
+                    end='\r'
+                )
                 next_log_time += log_interval
-                print(f"Time: {self.time:.2f}s / {config.SIMULATION_DURATION:.2f}s", end='\r')
 
             self.time += config.TIME_STEP
 
-        self.logger.close()
+        self.data_logger.close()
         self.energy_logger.close()
-        print("\nSimulation finished. Data saved to", config.CSV_SIMULATION_FILENAME)
+        print("\nSimulation finished. Data saved to", config.CSV_SIMULATION_FILENAME, "and energy_data.csv")
