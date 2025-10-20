@@ -8,7 +8,7 @@ def __round_to_1(x):
 NUM_BLOCKS = 100  # Количество блоков
 
 # Выберите режим генерации: 'uniform' (все одинаковые) или 'random' (случайные)
-GENERATION_MODE = 'uniform'
+GENERATION_MODE = 'random'
 
 DEFAULT_MASS = 1.0  # Масса одного блока (кг)
 DEFAULT_SPRING_CONSTANT = 20.0  # Жесткость пружин (Н/м)
@@ -18,7 +18,7 @@ DEFAULT_BLOCK_SPACING = 1.0  # Равновесное расстояние ме�
 SIMULATION_DURATION = 60.0  # Длительность симуляции (секунды)
 SAMPLES_PER_SECOND = 60  # Количество записей данных в секунду
 TIME_STEP = __round_to_1(sqrt(
-    DEFAULT_MASS / DEFAULT_SPRING_CONSTANT) / 1000)  # Шаг по времени для расчетов (должен быть маленьким для стабильности)
+    DEFAULT_MASS / DEFAULT_SPRING_CONSTANT) / 100)  # Шаг по времени для расчетов (должен быть маленьким для стабильности)
 DECIMAL_PLACES = 9
 
 # Начальные условия

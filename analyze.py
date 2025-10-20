@@ -83,9 +83,9 @@ def plot_energy_conservation() -> None:
     plt.figure(figsize=(12, 7))
 
     # Строим графики для каждого вида энергии
-    plt.plot(energy_df['time'], energy_df['kinetic_energy'], label='Кинетическая энергия (KE)', color='orange')
+    plt.plot(energy_df['time'], energy_df['kinetic_energy'], label='Кинетическая энергия (KE)', color='lime')
     plt.plot(energy_df['time'], energy_df['potential_energy'], label='Потенциальная энергия (PE)', color='blue')
-    plt.plot(energy_df['time'], energy_df['total_energy'], label='Полная энергия (Total)', color='red', linewidth=2.5)
+    plt.plot(energy_df['time'], energy_df['total_energy'], label='Полная энергия (Total)', color='red')
 
     # Настройка графика для наглядности
     plt.title('Сохранение энергии в системе', fontsize=16)

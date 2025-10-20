@@ -155,7 +155,7 @@ class ChainSimulation:
         self.positions += self.velocities * time_step + 0.5 * self.accelerations * (time_step ** 2)
 
         # Рассчитываем новые силы на основе новых положений
-        forces = self._calculate_forces()
+        forces = np.round(self._calculate_forces(), config.DECIMAL_PLACES)
 
         # Рассчитываем новые ускорения
         new_accelerations = forces / self.masses
