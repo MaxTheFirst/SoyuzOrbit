@@ -4,7 +4,7 @@ import pandas as pd
 import config
 from calculate_wave_speed import CalculateAverageSpeed, DifferenceBetweenTheoreticalAndSimulatedSpeed
 from system_builder import build_system
-from analyze import plot_all_data_about_block
+from analyze import plot_all_data_about_block, plot_energy_conservation
 from simulation import ChainSimulation
 from visualisation_demo import preprocess_data, run_animation
 
@@ -18,15 +18,28 @@ if __name__ == "__main__":
     simulation.run()
 
     try:
-        df = pd.read_csv('simulation_data.csv',
-                         dtype={"time": np.float64, "block_index": np.int64, "position": np.float64,
-                                "velocity": np.float64,
-                                "acceleration": np.float64})
+        df_simulation = pd.read_csv('simulation_data.csv',
+                                    dtype={"time": np.float64, "block_index": np.int64, "position": np.float64,
+                                           "velocity": np.float64,
+                                           "acceleration": np.float64,
+                                           "kinetic_energy": np.float64}
+                                    )
     except FileNotFoundError:
-        print("Error: simulation_data.csv not found. Please run main.py first.")
+        print("Error: simulation_data.csv not found.")
         exit()
 
-    average_speed = CalculateAverageSpeed(df=df, spacings=spacings)
+    try:
+        energy_df = pd.read_csv('energy_data.csv',
+                                dtype={"time": np.float64,
+                                       "kinetic_energy": np.float64,
+                                       "potential_energy": np.float64,
+                                       "total_energy": np.float64}
+                                )
+    except FileNotFoundError:
+        print("Error: energy_data.csv not found.")
+        exit()
+
+    average_speed = CalculateAverageSpeed(df=df_simulation, spacings=spacings)
     DifferenceBetweenTheoreticalAndSimulatedSpeed(
         simulated_speed=average_speed,
         masses=masses,
@@ -34,8 +47,10 @@ if __name__ == "__main__":
         spacings=spacings
     )
 
-    plot_all_data_about_block(df=df, spacings=spacings, block_index=99)
+    plot_all_data_about_block(df=df_simulation, spacings=spacings, block_index=50)
 
-    positions_data, velocities_data, accelerations_data = preprocess_data(filename=config.CSV_FILENAME)
+    plot_energy_conservation()
+
+    positions_data, velocities_data, accelerations_data = preprocess_data(filename=config.CSV_SIMULATION_FILENAME)
     run_animation(positions_df=positions_data, spacings=spacings, velocities_df=velocities_data,
                   accelerations_df=accelerations_data)

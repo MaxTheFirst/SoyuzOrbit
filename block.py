@@ -8,6 +8,7 @@ class Block:
         self.position = initial_position
         self.velocity = 0.0
         self.acceleration = 0.0
+        self.kinetic_energy = 0.0
 
     def update(self, force: float, time_step: float):
         """
@@ -22,6 +23,9 @@ class Block:
 
         # Обновляем скорость, используя среднее от старого и нового ускорения
         self.velocity += 0.5 * (self.acceleration + new_acceleration) * time_step
+
+        # Обновляем кинетическую энергию после обновления скорости
+        self.kinetic_energy = 0.5 * self.mass * (self.velocity ** 2)
 
         # Сохраняем новое ускорение
         self.acceleration = new_acceleration

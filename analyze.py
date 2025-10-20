@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from pandas import DataFrame
 
 
@@ -65,3 +66,36 @@ def plot_all_data_about_block(df: DataFrame, spacings: list[float], block_index:
     plot_block_shift(df=df, spacings=spacings, block_index=block_index)
     plot_block_velocity(df=df, spacings=spacings, block_index=block_index)
     plot_block_acceleration(df=df, spacings=spacings, block_index=block_index)
+
+
+def plot_energy_conservation() -> None:
+    """
+    Читает данные об энергии и строит график для проверки закона сохранения.
+    """
+    try:
+        energy_df = pd.read_csv('energy_data.csv')
+    except FileNotFoundError:
+        print("Файл energy_data.csv не найден. Запустите симуляцию для его создания.")
+        return
+
+    print("\nPlotting energy conservation graph...")
+
+    plt.figure(figsize=(12, 7))
+
+    # Строим графики для каждого вида энергии
+    plt.plot(energy_df['time'], energy_df['kinetic_energy'], label='Кинетическая энергия (KE)', color='orange')
+    plt.plot(energy_df['time'], energy_df['potential_energy'], label='Потенциальная энергия (PE)', color='blue')
+    plt.plot(energy_df['time'], energy_df['total_energy'], label='Полная энергия (Total)', color='red', linewidth=2.5)
+
+    # Настройка графика для наглядности
+    plt.title('Сохранение энергии в системе', fontsize=16)
+    plt.xlabel('Время (с)')
+    plt.ylabel('Энергия (Дж)')
+    plt.legend()
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+    # Находим начальную полную энергию для сравнения
+    initial_total_energy = energy_df['total_energy'].iloc[0]
+    plt.ylim(0, initial_total_energy * 1.5)  # Ограничим ось Y для лучшей читаемости
+
+    plt.show()
