@@ -7,4 +7,5 @@ dependencies = [
     "matplotlib>=3.10.7",
     "pandas>=2.3.3",
     "pygame>=2.6.1",
+    "scipy>=1.16.2",
 ]

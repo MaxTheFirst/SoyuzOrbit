@@ -5,11 +5,11 @@ from pandas.core.interchange.dataframe_protocol import DataFrame
 from scipy.cluster.hierarchy import average
 
 import config
-import system_builder
+import system_builder_2d
 import sys
 
-from system_builder import build_system
-from simulation import ChainSimulation
+from system_builder_2d import build_system
+from simulation_2d import ChainSimulation
 
 # Порог срабатывания: волна считается "прибывшей", когда смещение блока
 # впервые превысит этот процент от начального смещения.

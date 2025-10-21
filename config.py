@@ -1,32 +1,37 @@
-NUM_BLOCKS = 100  # Количество блоков
+# config.py
+import numpy as np
 
-# Выберите режим генерации: 'uniform' (все одинаковые) или 'random' (случайные)
-GENERATION_MODE = 'random'
+# Размеры системы (уменьшено для стабильности)
+NUM_BLOCKS_X = 8   # Маленькая система для стабильности
+NUM_BLOCKS_Y = 8
+TOTAL_BLOCKS = NUM_BLOCKS_X * NUM_BLOCKS_Y
 
-DEFAULT_MASS = 1  # Масса одного блока (кг)
-DEFAULT_SPRING_CONSTANT = 20.0  # Жесткость пружин (Н/м)
-DEFAULT_BLOCK_SPACING = 1.0  # Равновесное расстояние между блоками (м)
+# Режим генерации
+GENERATION_MODE = 'uniform'
 
-# Параметры симуляции
-SIMULATION_DURATION = 60.0  # Длительность симуляции (секунды)
-SAMPLES_PER_SECOND = 60  # Количество записей данных в секунду
-TIME_STEP = 0.001  # Шаг по времени для расчетов (должен быть маленьким для стабильности)
-DECIMAL_PLACES = 9
+# Стандартные значения (уменьшены для стабильности)
+DEFAULT_MASS = 1.0
+DEFAULT_SPRING_CONSTANT = 1.0  # Уменьшена жесткость
+DEFAULT_BLOCK_SPACING_X = 1.0
+DEFAULT_BLOCK_SPACING_Y = 1.0
 
-# Начальные условия
-BLOCK_TO_DISPLACE = 0  # Индекс блока для начального смещения (первый блок)
-INITIAL_DISPLACEMENT = 0.5  # Начальное смещение от положения равновесия (м)
+# Параметры симуляции (уменьшены для стабильности)
+SIMULATION_DURATION = 5.0
+SAMPLES_PER_SECOND = 20
+TIME_STEP = 0.01  # Увеличен шаг для стабильности
+DECIMAL_PLACES = 6
 
-# --- Флаг и параметры для затухания (трения) ---
-ENABLE_DAMPING = False
-if ENABLE_DAMPING:
-    # Это примерное время в секундах, за которое амплитуда волны упадёт в ~2.7 раза.
-    DECAY_TIME_SECONDS = 10.0
+# Начальные условия (уменьшены для стабильности)
+BLOCK_TO_DISPLACE_X = 4
+BLOCK_TO_DISPLACE_Y = 4
+INITIAL_DISPLACEMENT_X = 0.2  # Маленькое смещение
+INITIAL_DISPLACEMENT_Y = 0.1
 
-    # Коэффициент затухания рассчитывается автоматически из времени
-    DAMPING_COEFFICIENT = (2 * DEFAULT_MASS) / DECAY_TIME_SECONDS
+# Затухание (усилено для стабильности)
+ENABLE_DAMPING = True
+DECAY_TIME_SECONDS = 1.0
+DAMPING_COEFFICIENT = (5 * DEFAULT_MASS) / DECAY_TIME_SECONDS  # Усиленное затухание
 
+# Визуализация
 VISUALIZATION_SCALE = 1.0
-
-# Выходной файл
-CSV_FILENAME = 'simulation_data.csv'
+CSV_FILENAME = 'simulation_data_2d.csv'
