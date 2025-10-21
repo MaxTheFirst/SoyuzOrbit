@@ -39,17 +39,18 @@ if __name__ == "__main__":
         print("Error: energy_data.csv not found.")
         exit()
 
-    average_speed = CalculateAverageSpeed(df=df_simulation, spacings=spacings)
-    DifferenceBetweenTheoreticalAndSimulatedSpeed(
-        simulated_speed=average_speed,
-        masses=masses,
-        spring_constants=spring_constants,
-        spacings=spacings
-    )
+    if config.BLOCK_TO_DISPLACE == 0:
+        average_speed = CalculateAverageSpeed(df=df_simulation, spacings=spacings)
+        DifferenceBetweenTheoreticalAndSimulatedSpeed(
+            simulated_speed=average_speed,
+            masses=masses,
+            spring_constants=spring_constants,
+            spacings=spacings
+        )
 
     plot_all_data_about_block(df=df_simulation, spacings=spacings, block_index=50)
 
-    plot_energy_conservation()
+    plot_energy_conservation(df=energy_df)
 
     positions_data, velocities_data, accelerations_data = preprocess_data(filename=config.CSV_SIMULATION_FILENAME)
     run_animation(positions_df=positions_data, spacings=spacings, velocities_df=velocities_data,

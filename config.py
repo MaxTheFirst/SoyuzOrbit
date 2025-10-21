@@ -8,10 +8,10 @@ def __round_to_1(x):
 NUM_BLOCKS = 100  # Количество блоков
 
 # Выберите режим генерации: 'uniform' (все одинаковые) или 'random' (случайные)
-GENERATION_MODE = 'random'
+GENERATION_MODE = 'uniform'
 
 DEFAULT_MASS = 1.0  # Масса одного блока (кг)
-DEFAULT_SPRING_CONSTANT = 20.0  # Жесткость пружин (Н/м)
+DEFAULT_SPRING_CONSTANT = 2.0  # Жесткость пружин (Н/м)
 DEFAULT_BLOCK_SPACING = 1.0  # Равновесное расстояние между блоками (м)
 
 # Параметры симуляции
@@ -33,6 +33,12 @@ if ENABLE_DAMPING:
 
     # Коэффициент затухания рассчитывается автоматически из времени
     DAMPING_COEFFICIENT = (2 * DEFAULT_MASS) / DECAY_TIME_SECONDS
+
+ENABLE_DRIVING_FORCE = False  # Поставьте True, чтобы включить внешнюю силу
+if ENABLE_DRIVING_FORCE:
+    DRIVEN_BLOCK_INDEX = 0  # Индекс блока, который мы будем "раскачивать"
+    DRIVING_AMPLITUDE = 10.0  # Сила (в Ньютонах), с которой мы раскачиваем
+    DRIVING_FREQUENCY_HERTZ = 0.0130  # Частота (в Герцах) внешней силы
 
 VISUALIZATION_SCALE = 1.0
 

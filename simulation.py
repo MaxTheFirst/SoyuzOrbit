@@ -114,7 +114,7 @@ class ChainSimulation:
         # --- 3. Полная энергия ---
         self.total_energy = self.total_kinetic_energy + self.total_potential_energy
 
-    def _calculate_forces(self) -> np.ndarray:
+    def _calculate_forces(self, current_time: float) -> np.ndarray:
         """Рассчитывает силы, действующие на каждый блок."""
 
         # --- 1. Готовим "соседние" массивы ---
@@ -146,16 +146,26 @@ class ChainSimulation:
         if config.ENABLE_DAMPING:
             forces -= config.DAMPING_COEFFICIENT * self.velocities
 
+        # --- 4. Добавляем внешнюю вынуждающую силу ---
+        if config.ENABLE_DRIVING_FORCE:
+            # Рассчитываем угловую частоту: omega = 2 * pi * f
+            omega = 2.0 * np.pi * config.DRIVING_FREQUENCY_HERTZ
+            # F(t) = A * sin(omega * t)
+            driving_force = config.DRIVING_AMPLITUDE * np.sin(omega * current_time)
+
+            # Прикладываем силу к выбранному блоку
+            forces[config.DRIVEN_BLOCK_INDEX] += driving_force
+
         return forces
 
-    def _update_state(self, time_step: float):
+    def _update_state(self, time_step: float, current_time: float):
         """Обновляет состояние всех блоков (алгоритм Верле, векторизованно)."""
 
         # Обновляем положения
         self.positions += self.velocities * time_step + 0.5 * self.accelerations * (time_step ** 2)
 
         # Рассчитываем новые силы на основе новых положений
-        forces = np.round(self._calculate_forces(), config.DECIMAL_PLACES)
+        forces = np.round(self._calculate_forces(current_time + time_step), config.DECIMAL_PLACES)
 
         # Рассчитываем новые ускорения
         new_accelerations = forces / self.masses
@@ -171,19 +181,21 @@ class ChainSimulation:
         print("Starting simulation (NumPy optimized)...")
 
         # Задаем начальное условие
-        self.positions[config.BLOCK_TO_DISPLACE] += config.INITIAL_DISPLACEMENT
+        if not config.ENABLE_DRIVING_FORCE:
+            self.positions[config.BLOCK_TO_DISPLACE] += config.INITIAL_DISPLACEMENT
 
         log_interval = 1.0 / config.SAMPLES_PER_SECOND
         next_log_time = 0.0
 
-        initial_forces = self._calculate_forces()
+        self._update_energies()
+        initial_forces = self._calculate_forces(self.time)
         self.accelerations = initial_forces / self.masses
 
         # Рассчитаем начальную энергию
         self._update_energies()
 
         while self.time <= config.SIMULATION_DURATION:
-            self._update_state(config.TIME_STEP)
+            self._update_state(config.TIME_STEP, self.time)
             self._update_energies()
 
             if self.time >= next_log_time:
