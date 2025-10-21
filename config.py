@@ -5,7 +5,7 @@ def __round_to_1(x):
     return pow(10, int(floor(log10(abs(x)))))  # Выбирает ближайшую снизу степень десятки
 
 
-SIMULATION_MODE = '1D'
+SIMULATION_MODE = '2D'
 
 # --- 1D ПАРАМЕТРЫ ---
 NUM_BLOCKS = 100  # Количество блоков (для 1D)
@@ -22,7 +22,7 @@ SIMULATION_DURATION = 60.0  # Длительность симуляции (се�
 SAMPLES_PER_SECOND = 60  # Количество записей данных в секунду
 # Пересчитываем TIME_STEP, так как он зависит от k и m
 TIME_STEP = __round_to_1(sqrt(
-    DEFAULT_MASS / DEFAULT_SPRING_CONSTANT) * 2 * pi / 1000)  # Шаг по времени для расчетов (должен быть маленьким для стабильности)
+    DEFAULT_MASS / DEFAULT_SPRING_CONSTANT) * 2 * pi / 100)  # Шаг по времени для расчетов (должен быть маленьким для стабильности)
 DECIMAL_PLACES = 9
 
 # Начальные условия

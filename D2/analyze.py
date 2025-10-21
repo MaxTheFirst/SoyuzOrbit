@@ -87,3 +87,92 @@ def plot_wave_snapshot_2d(df: pd.DataFrame, time_snapshot: float) -> None:
     plt.ylabel('Y-индекс блока')
     plt.colorbar(label='Кинетическая энергия (Дж)')
     plt.show()
+
+
+def plot_block_data_2d(time_values: pd.Series, data_x: pd.Series, data_y: pd.Series,
+                       label_x: str, label_y: str, title: str, ylabel: str) -> None:
+    """
+    Общая (внутренняя) функция для построения графика (X и Y компоненты)
+    для одного блока.
+    """
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_values, data_x, label=label_x)
+    plt.plot(time_values, data_y, label=label_y)
+    plt.title(title, fontsize=16)
+    plt.xlabel('Время (с)')
+    plt.ylabel(ylabel)
+    plt.legend()
+    plt.grid(True, linestyle='--')
+    plt.show()
+
+
+def plot_block_displacement_2d(time_values: pd.Series, block_df: pd.DataFrame,
+                               y_idx: int, x_idx: int) -> None:
+    """Строит график смещения для одного блока."""
+    plot_block_data_2d(
+        time_values=time_values,
+        data_x=block_df['disp_x'],
+        data_y=block_df['disp_y'],
+        label_x='Смещение X',
+        label_y='Смещение Y',
+        title=f'Смещение блока ({y_idx}, {x_idx}) от времени',
+        ylabel='Смещение (м)'
+    )
+
+
+def plot_block_velocity_2d(time_values: pd.Series, block_df: pd.DataFrame,
+                           y_idx: int, x_idx: int) -> None:
+    """Строит график скорости для одного блока."""
+    plot_block_data_2d(
+        time_values=time_values,
+        data_x=block_df['vel_x'],
+        data_y=block_df['vel_y'],
+        label_x='Скорость X',
+        label_y='Скорость Y',
+        title=f'Скорость блока ({y_idx}, {x_idx}) от времени',
+        ylabel='Скорость (м/с)'
+    )
+
+
+def plot_block_acceleration_2d(time_values: pd.Series, block_df: pd.DataFrame,
+                               y_idx: int, x_idx: int) -> None:
+    """Строит график ускорения для одного блока."""
+    plot_block_data_2d(
+        time_values=time_values,
+        data_x=block_df['acc_x'],
+        data_y=block_df['acc_y'],
+        label_x='Ускорение X',
+        label_y='Ускорение Y',
+        title=f'Ускорение блока ({y_idx}, {x_idx}) от времени',
+        ylabel='Ускорение (м/с²)'
+    )
+
+
+def plot_all_data_about_block_2d(df: pd.DataFrame, y_idx: int, x_idx: int,
+                                 equilibrium_positions: np.ndarray) -> None:
+    """
+    Главная функция: фильтрует данные и вызывает 3 функции-плоттера.
+    """
+    print(f"\nGenerating plots for block ({y_idx}, {x_idx})...")
+
+    # 1. Фильтруем DataFrame для нужного блока
+    block_df = df[(df['block_y'] == y_idx) & (df['block_x'] == x_idx)].copy()
+
+    if block_df.empty:
+        print(f"Error: No data found for block ({y_idx}, {x_idx}).")
+        return
+
+    # 2. Рассчитываем равновесные позиции для расчета смещения
+    eq_x = equilibrium_positions[y_idx, x_idx, 0]
+    eq_y = equilibrium_positions[y_idx, x_idx, 1]
+
+    # 3. Рассчитываем смещение и добавляем как новые столбцы
+    block_df['disp_x'] = block_df['pos_x'] - eq_x
+    block_df['disp_y'] = block_df['pos_y'] - eq_y
+
+    time_values = block_df['time']
+
+    # 4. Вызываем отдельные плоттеры
+    plot_block_displacement_2d(time_values, block_df, y_idx, x_idx)
+    plot_block_velocity_2d(time_values, block_df, y_idx, x_idx)
+    plot_block_acceleration_2d(time_values, block_df, y_idx, x_idx)

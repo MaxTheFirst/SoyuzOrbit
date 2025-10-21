@@ -8,7 +8,7 @@ from D1.analyze import plot_all_data_about_block, plot_energy_conservation, plot
 from D1.simulation import ChainSimulation
 from D1.visualisation_demo import preprocess_data, run_animation
 
-from D2.analyze import plot_energy_conservation_2d, plot_wave_snapshot_2d
+from D2.analyze import plot_energy_conservation_2d, plot_wave_snapshot_2d, plot_all_data_about_block_2d
 from D2.system_builder import build_system_2d
 from D2.simulation import GridSimulation
 from D2.visualisation import preprocess_data_2d_realistic, run_animation_2d_realistic
@@ -102,6 +102,8 @@ def run_2d_simulation():
         exit()
 
     # 5. Строим графики
+    y_idx, x_idx = (4, 8)
+    plot_all_data_about_block_2d(df, y_idx, x_idx, equilibrium_positions)
     plot_energy_conservation_2d()
     plot_wave_snapshot_2d(df, time_snapshot=config.SIMULATION_DURATION * 0.5)
 
