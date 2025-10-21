@@ -4,4 +4,4 @@
 .vscode/
 
 __pycache__/
-*.pyc
+*.pycsimulation_data.csv
