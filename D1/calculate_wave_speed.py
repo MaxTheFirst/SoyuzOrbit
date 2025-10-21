@@ -1,15 +1,12 @@
 # calculate_wave_speed.py
 import pandas as pd
 import numpy as np
-from pandas.core.interchange.dataframe_protocol import DataFrame
-from scipy.cluster.hierarchy import average
-
-import config
-import system_builder
 import sys
 
-from system_builder import build_system
-from simulation import ChainSimulation
+from scipy.fft import fft, fftfreq
+from scipy.signal import find_peaks
+
+import config
 
 # Порог срабатывания: волна считается "прибывшей", когда смещение блока
 # впервые превысит этот процент от начального смещения.
@@ -50,11 +47,11 @@ def calculate_arrival_times(df: pd.DataFrame, equilibrium_positions: np.ndarray)
     return arrival_times
 
 
-def CalculateAverageSpeed(df: DataFrame, spacings: list[float]) -> float:
+def calculate_average_speed(df: pd.DataFrame, spacings: list[float]) -> float:
     """
     Основная функция для запуска анализа скорости волны.
     """
-    print("--- Wave Speed Analysis ---")
+    print("--- Wave Speed Analysis Upon Reaching ---")
 
     # 1. Расчет равновесных положений
     # np.cumsum создает массив [spacing0, spacing0+spacing1, ...]
@@ -113,10 +110,129 @@ def CalculateAverageSpeed(df: DataFrame, spacings: list[float]) -> float:
     return float(avg_speed)
 
 
-def DifferenceBetweenTheoreticalAndSimulatedSpeed(simulated_speed: float, masses: list[float],
-                                                  spring_constants: list[float], spacings: list[float]):
+def find_dominant_frequency(time_series_df: pd.DataFrame, equilibrium_pos: float) -> float:
+    """
+    Использует FFT для поиска доминирующей частоты в колебаниях одного блока.
+    """
+    # 1. Получаем сигнал (смещение) и временные отсчеты
+    displacements = time_series_df['position'].values - equilibrium_pos
+    times = time_series_df['time'].values
+
+    if len(times) < 2:
+        print("Error (FFT): Not enough time data to find frequency.")
+        return 0.0
+
+    # 2. Определяем параметры для FFT
+    N = len(displacements)
+    dt = times[1] - times[0]  # Шаг времени (по данным логгера)
+
+    if dt == 0:
+        print("Error (FFT): Time step is zero.")
+        return 0.0
+
+    # 3. Выполняем FFT
+    yf: np.ndarray = fft(displacements)
+    xf: np.ndarray = fftfreq(N, dt)  # Получаем реальные частоты в Герцах
+
+    # 4. Ищем пик (максимальную амплитуду)
+    # Нам нужны только положительные частоты, и мы пропускаем 0-ю (постоянная составляющая)
+    positive_freq_mask = (xf > 0)
+
+    if not np.any(positive_freq_mask):
+        print("Error (FFT): No positive frequencies found.")
+        return 0.0
+
+    peak_index = np.argmax(np.abs(yf[positive_freq_mask]))
+    dominant_frequency = xf[positive_freq_mask][peak_index]
+
+    return float(dominant_frequency)
+
+
+def find_wavelength(snapshot_df: pd.DataFrame, equilibrium_positions: np.ndarray) -> float:
+    """
+    Использует find_peaks для поиска средней длины волны на "снимке" системы.
+    """
+    # 1. Получаем сигнал (смещение) в пространстве
+    displacements = snapshot_df['position'].values - equilibrium_positions
+
+    # 2. Находим все пики (гребни волны)
+    # Устанавливаем минимальную высоту пика, чтобы отсеять шум
+    min_height = np.max(displacements) * 0.1
+    peaks_indices, _ = find_peaks(displacements, height=min_height, distance=5)
+
+    if len(peaks_indices) < 2:
+        print("Error (Peaks): Not enough peaks found to measure wavelength.")
+        return 0.0
+
+    # 3. Получаем реальные *позиции* этих пиков
+    peak_positions = equilibrium_positions[peaks_indices]
+
+    # 4. Рассчитываем расстояния между пиками (это и есть длины волн)
+    wavelengths = np.diff(peak_positions)
+
+    # 5. Усредняем
+    avg_wavelength = np.mean(wavelengths)
+    return float(avg_wavelength)
+
+
+def calculate_wave_speed_by_form(df: pd.DataFrame, spacings: list[float]) -> float:
+    """
+    Основная функция для запуска анализа скорости волны (Метод 2: v = f * lambda).
+    """
+
+    # --- 1. Находим частоту (f) ---
+    print("Wave Speed by Waveform")
+    equilibrium_positions = np.cumsum(spacings[:config.NUM_BLOCKS])
+
+    # Берем данные по блоку из середины цепи для "чистого" сигнала
+    middle_block_index = config.NUM_BLOCKS // 2
+    time_series_df = df[df['block_index'] == middle_block_index].copy()
+
+    # Игнорируем "переходный процесс" в начале симуляции
+    start_time = config.SIMULATION_DURATION * 0.25
+    time_series_df = time_series_df[time_series_df['time'] > start_time]
+
+    if time_series_df.empty:
+        print("Error: No time-series data found for middle block.")
+        return 0.0
+
+    f = find_dominant_frequency(time_series_df, float(equilibrium_positions[middle_block_index]))
+    if f == 0.0: return 0.0
+
+    print(f"Dominant Frequency (f): {f:.4f} Hz (Period T = {1 / f:.4f} s)")
+
+    # --- 2. Находим длину волны (λ) ---
+
+
+    # Берем "снимок" ближе к концу симуляции, чтобы волна установилась
+    snapshot_time = config.SIMULATION_DURATION * 0.75
+    available_times = df['time'].unique()
+    closest_time = available_times[np.abs(available_times - snapshot_time).argmin()]
+
+    snapshot_df = df[df['time'] == closest_time].copy().sort_values(by='block_index')
+
+    if snapshot_df.empty or len(snapshot_df) != len(equilibrium_positions):
+        print(f"Error: Snapshot data at t={closest_time}s is incomplete.")
+        return 0.0
+
+    lambda_val = find_wavelength(snapshot_df, equilibrium_positions)
+    if lambda_val == 0.0: return 0.0
+
+    print(f"Average Wavelength (\u03BB): {lambda_val:.4f} m")
+
+    # --- 3. Рассчитываем скорость ---
+    speed = f * lambda_val
+    print("\n--- Form-Based Result ---")
+    print(f"Calculated Speed (v = f * \u03BB): {speed:.4f} m/s")
+
+    return speed
+
+
+def difference_between_theoretical_and_simulated_speed(simulated_speed: float, masses: list[float],
+                                                       spring_constants: list[float], spacings: list[float]):
     """
     Вычисляет процентное отклонение между теоретической и смоделированной скоростью.
+    (Эта функция остается без изменений)
     """
     if config.GENERATION_MODE == 'uniform':
         # Получаем стандартные значения
