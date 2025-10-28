@@ -7,6 +7,16 @@ import config
 
 # import config
 
+def get_block_data(df: DataFrame, block_index: int, column_name: str) -> DataFrame:
+    block_df = df[df['block_index'] == block_index]
+
+    if block_df.empty:
+        print(f"No data found for block {block_index}")
+        return DataFrame()
+
+    # Рассчитываем смещение от равновесного положения
+    return block_df[column_name].values
+
 
 def plot_block_data(df: DataFrame, block_index: int, column_name: str, title: str,
                     ylabel: str) -> None:

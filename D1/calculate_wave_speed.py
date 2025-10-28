@@ -14,6 +14,14 @@ import config
 ARRIVAL_THRESHOLD_PERCENT = 1.0
 
 
+class WaveError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+        full_message = f"Warning: {message}."
+        super().__init__(full_message)
+
+
 def calculate_arrival_times(df: pd.DataFrame, equilibrium_positions: np.ndarray) -> list:
     """
     Анализирует данные и находит время первого прибытия волны для каждого блока.
@@ -26,8 +34,7 @@ def calculate_arrival_times(df: pd.DataFrame, equilibrium_positions: np.ndarray)
     for i in range(config.NUM_BLOCKS):
         block_df = df[df['block_index'] == i]
         if block_df.empty:
-            print(f"Warning: No data found for block {i}. Stopping analysis.")
-            return []
+            raise WaveError(f"Warning: No data found for block {i}. Stopping analysis.")
 
         # Вычисляем смещение для текущего блока
         displacement = block_df['position'] - equilibrium_positions[i]
@@ -36,8 +43,8 @@ def calculate_arrival_times(df: pd.DataFrame, equilibrium_positions: np.ndarray)
         triggered_events = block_df[np.abs(displacement) > threshold]
 
         if triggered_events.empty:
-            print(f"Warning: Wave did not reach block {i} with sufficient amplitude. Analysis might be incomplete.")
-            break  # Прерываем, если волна затухла и не дошла до конца
+            raise WaveError(
+                f"Warning: Wave did not reach block {i} with sufficient amplitude. Analysis might be incomplete.")
 
         # Записываем самое первое время
         arrival_time = triggered_events['time'].iloc[0]
@@ -61,12 +68,10 @@ def calculate_average_speed(df: pd.DataFrame, spacings: list[float]) -> float:
     arrival_times = calculate_arrival_times(df, equilibrium_positions)
 
     if len(arrival_times) < 2:
-        print("Error: Not enough data to calculate speed (need at least 2 blocks).")
-        sys.exit()
+        raise WaveError("Error: Not enough data to calculate speed (need at least 2 blocks).")
 
     if arrival_times != sorted(arrival_times):
-        print("Error: Counterintuitive data")
-        sys.exit()
+        raise WaveError("Error: Counterintuitive data")
 
     # 4. Расчет локальных скоростей
     local_speeds = []
@@ -80,7 +85,6 @@ def calculate_average_speed(df: pd.DataFrame, spacings: list[float]) -> float:
     # Убедимся, что у нас достаточно данных для анализа в этом диапазоне
     if len(arrival_times) <= START_BLOCK:
         print("Error: Wave did not reach the analysis start block.")
-        sys.exit()
 
     # Обрезаем диапазон анализа до END_BLOCK, если волна не дошла дальше
     analysis_range_end = min(len(arrival_times) - 1, END_BLOCK)
@@ -202,7 +206,6 @@ def calculate_wave_speed_by_form(df: pd.DataFrame, spacings: list[float]) -> flo
     print(f"Dominant Frequency (f): {f:.4f} Hz (Period T = {1 / f:.4f} s)")
 
     # --- 2. Находим длину волны (λ) ---
-
 
     # Берем "снимок" ближе к концу симуляции, чтобы волна установилась
     snapshot_time = config.SIMULATION_DURATION * 0.75

@@ -4,6 +4,8 @@ import numpy as np
 
 import config
 
+from scipy.interpolate import interp1d
+
 
 class DataLogger:
     """
@@ -114,7 +116,7 @@ class ChainSimulation:
         # --- 3. Полная энергия ---
         self.total_energy = self.total_kinetic_energy + self.total_potential_energy
 
-    def _calculate_forces(self, current_time: float) -> np.ndarray:
+    def _calculate_forces(self, current_time: float, driving_func=None) -> np.ndarray:
         """Рассчитывает силы, действующие на каждый блок."""
 
         # --- 1. Готовим "соседние" массивы ---
@@ -146,8 +148,39 @@ class ChainSimulation:
         if config.ENABLE_DAMPING:
             forces -= config.DAMPING_COEFFICIENT * self.velocities
 
+        if config.ABSORBING_BOUNDARY_RIGHT:
+            # Эта секция заменяет силу от "правой стены"
+            # на "идеальное поглощение" (согласование импеданса).
+
+            # 4.1. Рассчитываем волновое сопротивление (импеданс)
+            # (Для однородной цепи)
+            m = config.DEFAULT_MASS
+            k = config.DEFAULT_SPRING_CONSTANT
+            impedance = np.sqrt(k * m)
+
+            # 4.2. Рассчитываем поглощающую силу для ПОСЛЕДНЕГО блока
+            v_last = self.velocities[-1]
+            absorbing_force = -impedance * v_last
+
+            # 4.3. Нам нужно *заменить* силу от правой стены на эту силу.
+            # Исходная сила на последнем блоке:
+            # forces[-1] = force_left_last + force_right_wall
+
+            # Находим силу, которую мы хотим удалить:
+            k_N = self.spring_constants[-1]
+            spacing_N = self.spacings[-1]
+            force_right_wall = k_N * (self.right_wall_pos - self.positions[-1] - spacing_N)
+
+            # Заменяем:
+            forces[-1] = forces[-1] - force_right_wall + absorbing_force
+
         # --- 4. Добавляем внешнюю вынуждающую силу ---
-        if config.ENABLE_DRIVING_FORCE:
+
+        if driving_func is not None:
+            # Используем интерполированную функцию, а не sin()
+            driving_force = driving_func(current_time)
+            forces[config.DRIVEN_BLOCK_INDEX] += driving_force
+        elif config.ENABLE_DRIVING_FORCE:
             # Рассчитываем угловую частоту: omega = 2 * pi * f
             omega = 2.0 * np.pi * config.DRIVING_FREQUENCY_HERTZ
             # F(t) = A * sin(omega * t)
@@ -158,14 +191,14 @@ class ChainSimulation:
 
         return forces
 
-    def _update_state(self, time_step: float, current_time: float):
+    def _update_state(self, time_step: float, current_time: float, driving_func=None):
         """Обновляет состояние всех блоков (алгоритм Верле, векторизованно)."""
 
         # Обновляем положения
         self.positions += self.velocities * time_step + 0.5 * self.accelerations * (time_step ** 2)
 
         # Рассчитываем новые силы на основе новых положений
-        forces = np.round(self._calculate_forces(current_time + time_step), config.DECIMAL_PLACES)
+        forces = self._calculate_forces(current_time + time_step, driving_func)
 
         # Рассчитываем новые ускорения
         new_accelerations = forces / self.masses
@@ -226,3 +259,116 @@ class ChainSimulation:
         self.data_logger.close()
         self.energy_logger.close()
         print("\nSimulation finished. Data saved to", config.CSV_SIMULATION_FILENAME, "and energy_data.csv")
+
+        # D1/simulation_1d.py (ЗАМЕНИТЬ этот метод)
+
+    def run_audio_simulation(self, time_array: np.ndarray, signal_array: np.ndarray,
+                             output_sample_rate: int) -> np.ndarray:
+        """
+        Запускает симуляцию, используя аудиосигнал как внешнюю силу.
+        Записывает СИЛУ на ПОСЛЕДНEM блоке (для совпадения F_in -> F_out).
+        """
+        print("Starting audio-driven simulation (Recording Force)...")
+
+        # --- 1. СБРОС СИМУЛЯЦИИ ---
+        print("Resetting simulation state...")
+        self.time = 0.0
+        self.positions = np.cumsum(self.spacings[:-1])
+        self.velocities = np.zeros(config.NUM_BLOCKS)
+        self.accelerations = np.zeros(config.NUM_BLOCKS)
+
+        # --- 2. РАСЧЕТ ФИЗИКИ ---
+        MIC_INDEX = config.NUM_BLOCKS - 1
+        total_duration = config.SIMULATION_DURATION
+
+        # --- 3. [ИЗМЕНЕНИЕ] Рассчитываем импеданс Z ---
+        # Мы должны использовать те же параметры, что и в _calculate_forces
+        m = config.DEFAULT_MASS
+        k = config.DEFAULT_SPRING_CONSTANT
+        impedance = np.sqrt(k * m)
+        print(f"Calculated Impedance (Z): {impedance:.4f}")
+
+        # --- 4. Подготовка (Интерполятор и Запись) ---
+        driving_force_func = interp1d(time_array, signal_array * 1.0,  # Можно вернуть 1.0
+                                      bounds_error=False, fill_value=0.0)
+
+        output_recording = []
+        log_interval = 1.0 / output_sample_rate
+        time_step = min(config.TIME_STEP, config.round_to_1(log_interval))
+        next_log_time = 0.0
+        flag = False
+
+        # --- 5. Начальное состояние ---
+        initial_forces = self._calculate_forces(self.time, driving_force_func)
+        self.accelerations = initial_forces / self.masses
+
+        # --- 6. ГЛАВНЫЙ ЦИКЛ ---
+        while self.time <= total_duration:
+            self._update_state(time_step * 10, self.time, driving_force_func)
+
+            # "Микрофон"
+            if not flag and abs(self.velocities[MIC_INDEX]) > 1.0 / 100000.0:
+                next_log_time = self.time
+                total_duration = self.time + time_array[-1]
+                flag = True
+
+            if flag and self.time >= next_log_time:
+                # --- ГЛАВНОЕ ИЗМЕНЕНИЕ ---
+                # Раньше было: output_recording.append(self.velocities[MIC_INDEX])
+                # Теперь:
+                output_force = impedance * self.velocities[MIC_INDEX]
+                output_recording.append(output_force)
+                # ---
+
+                next_log_time += log_interval
+
+            self.time += time_step
+
+        print("\nAudio simulation finished.")
+        return np.array(output_recording)
+
+    def run_audio_simulation_test(self, time_array: np.ndarray, signal_array: np.ndarray,
+                                  output_sample_rate: int) -> np.ndarray:
+        """
+        Запускает симуляцию, используя АУДИОСИГНАЛ как внешнюю силу.
+        """
+        print("Starting audio-driven simulation...")
+
+        # 1. Нам нужен "интерполятор", чтобы находить F(t) для любого time_step
+        # Он будет линейно интерполировать наш входной аудиосигнал
+        # Умножаем сигнал на 10.0 (сила в Ньютонах)
+        driving_force_func = interp1d(time_array, signal_array * 10.0,
+                                      bounds_error=False, fill_value=0.0)
+
+        # 2. Подготовка к записи
+        # Мы должны записывать на *каждом шаге* симуляции!
+        # Но это слишком много данных. Мы будем записывать с частотой output_sample_rate
+
+        output_recording = []
+        log_interval = 1.0 / output_sample_rate
+        next_log_time = 0.0
+        time_step = min(config.TIME_STEP, config.round_to_1(log_interval / 2.0))
+
+        # 3. Рассчитываем начальное состояние
+        # (Начальное смещение 0, т.к. мы используем внешнюю силу)
+        initial_forces = self._calculate_forces(self.time, driving_force_func)
+        self.accelerations = initial_forces / self.masses
+
+        total_duration = time_array[-1]
+
+        while self.time <= total_duration:
+            # Обновляем состояние
+            self._update_state(config.TIME_STEP, self.time, driving_force_func)
+
+            # (Энергию не считаем, т.к. внешняя сила постоянно вкачивает энергию)
+
+            # "Микрофон": записываем скорость последнего блока
+            if self.time >= next_log_time:
+                output_recording.append(self.velocities[-1])  # Запись!
+                next_log_time += log_interval
+
+            print(f"Audio sim time: {self.time:.2f}s / {total_duration:.2f}s", end='\r')
+            self.time += time_step
+
+        print("\nAudio simulation finished.")
+        return np.array(output_recording)
