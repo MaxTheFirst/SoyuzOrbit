@@ -12,7 +12,7 @@ from D1.analyze_audio import analyze_audio_files
 
 # --- Настройки аудио-эксперимента ---
 USE_CUSTOM_WAV = True
-CUSTOM_WAV_FILE = "my.wav"  # <-- Укажите здесь ваш файл
+CUSTOM_WAV_FILE = "D1/input_chirp.wav"  # <-- Укажите здесь ваш файл
 
 RECORD_AFTER_ARRIVAL = 10.0
 

@@ -8,13 +8,13 @@ def round_to_1(x):
 SIMULATION_MODE = '1D'
 
 # --- 1D ПАРАМЕТРЫ ---
-NUM_BLOCKS = 10  # Количество блоков (для 1D)
+NUM_BLOCKS = 100  # Количество блоков (для 1D)
 
 # Выберите режим генерации: 'uniform' (все одинаковые) или 'random' (случайные)
 GENERATION_MODE = 'uniform'
 
 DEFAULT_MASS = 1.0  # Масса одного блока (кг)
-DEFAULT_SPRING_CONSTANT = 50000.0  # Жесткость пружин (Н/м)
+DEFAULT_SPRING_CONSTANT = 500.0  # Жесткость пружин (Н/м)
 DEFAULT_BLOCK_SPACING = 1.0  # Равновесное расстояние между блоками (м)
 
 # Параметры симуляции
