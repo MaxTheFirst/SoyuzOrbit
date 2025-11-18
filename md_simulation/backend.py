@@ -1,6 +1,7 @@
 import numpy as fallback_np
 
 try:
+    raise ImportError
     import cupy as np
     print("✅ Успешно импортирован CuPy. Симуляция будет на GPU.")
 except ImportError:

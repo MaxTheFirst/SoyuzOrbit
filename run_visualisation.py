@@ -81,7 +81,7 @@ def main():
         # --- 3.2. Обновление Физики (несколько шагов) ---
         for _ in range(STEPS_PER_FRAME):
             pos, vel, momentum_transfer = simulation_step(
-                pos, vel, piston_pos, piston_vel, p.L, p.dt
+                pos, vel, piston_pos, piston_vel, p.L, p.dt, p.collision_prob
             )
 
             momentum_accumulator += momentum_transfer
