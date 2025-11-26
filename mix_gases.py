@@ -108,7 +108,7 @@ def main():
 
     plt.title(f"Закон Грэма: Диффузия\nHe быстрее Ar в {ratio:.1f} раз")
     plt.xlabel("Время (с)")
-    plt.ylabel("MSD $\langle r^2 \\rangle$ ($м^2$)")
+    plt.ylabel(r"MSD $\langle r^2 \rangle$ ($м^2$)")
     plt.legend()
     plt.grid(True)
 
