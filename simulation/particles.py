@@ -1,6 +1,8 @@
 import numpy as np
 from enum import Enum
 
+from fontTools.ufoLib.utils import deprecated
+
 
 # Добавляем перечисление для статусов
 class ParticleStatus(Enum):
@@ -28,10 +30,26 @@ class ParticleSystem:
         self.particles = []
         self.cfg = config
 
-    def spawn_particles_manual(self, x_pos, y_range):
+    @deprecated("Старая версия")
+    def old_spawn_particles_manual(self, x_pos, y_range):
         ys = np.linspace(y_range[0], y_range[1], self.cfg.beam.particles_count)
         for y in ys:
             p = Particle(x_pos, y, self.cfg.physics.e_charge, self.cfg.physics.m_electron)
+            self.particles.append(p)
+
+    def spawn_particles_manual(self, x_pos, y_range):
+        e = abs(self.cfg.physics.e_charge)
+        m = self.cfg.physics.m_electron
+        v_th = np.sqrt(2 * e * self.cfg.beam.thermal_energy_ev / m)
+
+        ys = np.linspace(y_range[0], y_range[1], self.cfg.beam.particles_count)
+        for y in ys:
+            p = Particle(x_pos, y, self.cfg.physics.e_charge, self.cfg.physics.m_electron)
+
+            angle = np.random.uniform(-np.pi / 3, np.pi / 3)
+            p.v[0] = v_th * np.cos(angle)  # Скорость по X
+            p.v[1] = v_th * np.sin(angle)  # Скорость по Y
+
             self.particles.append(p)
 
     def update(self, grid, voltage_scale=1.0):

@@ -89,7 +89,7 @@ def main():
     # Частицы
     ps = ParticleSystem(cfg)
 
-    def spawn_closure(particle_sys):
+    def spawn_closure():
         """ЛОГИКА СПАВНА НА ОСНОВЕ ГЕОМЕТРИИ"""
         # Спавним частицы сразу за правым краем катода + отступ из конфига
         spawn_x = cathode_right_edge + cfg.beam.spawn_offset_mm
@@ -103,15 +103,15 @@ def main():
         # Передаем рассчитанные координаты в спавнер
         # Нам нужно модифицировать метод spawn_particles, чтобы он принимал аргументы,
         # ИЛИ (лучше) обновить конфиг "на лету" перед созданием, но мы передадим явно.
-        particle_sys.spawn_particles_manual(spawn_x, spawn_y)
+        return spawn_x, spawn_y
 
     analyzer = StatisticsAnalyzer(grid, cfg)
     print("Сбор статистики...")
-    stats = analyzer.calculate_full_stats(spawn_func=spawn_closure)
+    stats = analyzer.calculate_full_stats(*spawn_closure())
     analyzer.plot_dashboard(stats)
 
     # Симуляция
-    spawn_closure(ps)
+    ps.spawn_particles_manual(*spawn_closure())
     for _ in range(cfg.sim.total_steps):
         ps.update(grid)
 

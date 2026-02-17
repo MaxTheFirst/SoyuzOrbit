@@ -1,8 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
+from concurrent.futures import ProcessPoolExecutor
 from simulation.particles import ParticleStatus, ParticleSystem
 import copy
+
+
+# Глобальная функция-воркер для параллельных вычислений
+# Она должна быть вне класса, чтобы корректно работать в мультипроцессинге
+def _voltage_worker(u, max_v, cfg, grid, x_spawn, y_range):
+    """Симуляция одной точки напряжения на отдельном ядре"""
+    scale = u / max_v if max_v != 0 else 0
+
+    # Создаем локальную систему частиц для этого процесса
+    ps = ParticleSystem(cfg)
+
+    # Используем твой метод ручного спавна с учетом разброса
+    ps.spawn_particles_manual(x_spawn, y_range)
+
+    # Запас шагов для медленных частиц при низком U
+    max_steps_safety = cfg.sim.total_steps * 10
+
+    step = 0
+    while step < max_steps_safety:
+        ps.update(grid, voltage_scale=scale)
+        # Оптимизация: проверяем живых раз в 100 шагов
+        if step % 100 == 0:
+            active_count = sum(1 for p in ps.particles if p.status == ParticleStatus.IN_FLIGHT)
+            if active_count == 0:
+                break
+        step += 1
+
+    hits = sum(1 for p in ps.particles if p.status == ParticleStatus.HIT_ANODE)
+    total = len(ps.particles)
+    return (hits / total) * 100 if total > 0 else 0
 
 
 class StatisticsAnalyzer:
@@ -10,100 +40,46 @@ class StatisticsAnalyzer:
         self.grid = grid
         self.cfg = config
 
-    def run_iv_curve(self, voltage_steps=20):
+    def calculate_full_stats(self, x_spawn, y_range):
         """
-        Строит ВАХ (Вольт-Амперную характеристику).
-        Использует уже рассчитанное поле grid, просто масштабирует его.
+        Основной метод расчета статистики с использованием мультипроцессинга
         """
+        # 1. Формируем массив напряжений с плотностью у нуля (без хардкода)
+        # Степень 6 гарантирует "микроскопический" просмотр начала ВАХ
         max_v = self.cfg.user.max_voltage
-        voltages = np.linspace(0, max_v, voltage_steps)
-        currents = []  # В % от эмиссии (Transmission rate)
+        num_points = self.cfg.user.max_stat_simulation_steps
 
-        # Запоминаем параметры пучка, чтобы спавнить одинаково
-        # В main мы рассчитывали координаты динамически, нам нужно их передать сюда
-        # Для простоты предположим, что ps уже настроен, мы будем создавать копии
+        voltages = max_v * (np.linspace(0, 1, num_points) ** 2)
+        voltages = np.unique(np.sort(voltages))
 
-        print(f"Расчет ВАХ ({voltage_steps} точек)...")
+        print(f"--- Запуск ПАРАЛЛЕЛЬНОГО расчета ВАХ ({len(voltages)} точек) ---")
 
-        # Нам нужно знать точку старта. Возьмем её из layout конфига примерно
-        # Или лучше передадим "эталонную" систему частиц
-
-        for u in voltages:
-            # Коэффициент масштаба поля
-            # Если расчет был для max_voltage, то scale = u / max_voltage
-            scale = u / max_v if max_v != 0 else 0
-
-            # Создаем новую систему частиц для каждого теста
-            ps = ParticleSystem(self.cfg)
-
-            # ВАЖНО: Нам нужно знать, откуда спавнить.
-            # Давай используем те же параметры, что и в конфиге,
-            # но нужно пересчитать координаты мм в "абсолютные"
-            # Для упрощения сейчас возьмем фиксированные из конфига (BeamConfig)
-            # При условии, что BeamConfig хранит корректные абсолютные значения (мы это правили)
-            # ЕСЛИ НЕТ: нужно прокинуть координаты спавна в run_iv_curve
-
-            # ХАК: Пока спавним "на глаз" по конфигу, если он не обновлялся в main, будет ошибка.
-            # Правильнее передать функцию спавна.
-            pass
-
-        return voltages, currents
-
-    def calculate_full_stats(self, spawn_func):
-        """
-        Считает статистику, динамически ожидая завершения полета частиц.
-        """
-        # 1. Данные для ВАХ
-        voltages = np.linspace(0, self.cfg.user.max_voltage, self.cfg.beam.particles_count)
+        # 2. Запуск пула процессов
         transmission_rates = []
 
-        print(f"--- Запуск расчета ВАХ ({len(voltages)} точек) ---")
+        # Используем ProcessPoolExecutor для задействования всех ядер CPU
+        with ProcessPoolExecutor() as executor:
+            # Подготавливаем список задач
+            futures = [
+                executor.submit(_voltage_worker, u, max_v, self.cfg, self.grid, x_spawn, y_range)
+                for u in voltages
+            ]
 
-        for i, u in enumerate(voltages):
-            if u == 0:
-                transmission_rates.append(0.0)
-                continue
+            # Собираем результаты по мере завершения
+            for i, future in enumerate(futures):
+                rate = future.result()
+                transmission_rates.append(rate)
 
-            scale = u / self.cfg.user.max_voltage
-            ps = ParticleSystem(self.cfg)
-            spawn_func(ps)
+                # Небольшой прогресс-бар в консоль
+                if i % 10 == 0:
+                    print(f"Прогресс ВАХ: {i}/{len(voltages)} точек рассчитано...")
 
-            # --- УМНЫЙ ЦИКЛ СИМУЛЯЦИИ ---
-            # При низком напряжении частицы летят медленно.
-            # Даем им запас времени (например, 20-кратный от номинала),
-            # но прерываемся, как только все долетели.
-            max_steps_safety = self.cfg.sim.total_steps * 20
-
-            step = 0
-            while step < max_steps_safety:
-                ps.update(self.grid, voltage_scale=scale)
-
-                # Проверка: есть ли еще живые (летящие) частицы?
-                # Оптимизация: проверяем не каждый шаг, а раз в 50 шагов
-                if step % 50 == 0:
-                    active_count = sum(1 for p in ps.particles if p.status == ParticleStatus.IN_FLIGHT)
-                    if active_count == 0:
-                        break  # Все долетели или врезались
-                step += 1
-
-            # Считаем результаты
-            hits = sum(1 for p in ps.particles if p.status == ParticleStatus.HIT_ANODE)
-            total = len(ps.particles)
-            rate = (hits / total) * 100 if total > 0 else 0
-            transmission_rates.append(rate)
-
-            # Диагностика для первых точек (где обычно нули)
-            if i < 3 or hits == 0:
-                in_flight = sum(1 for p in ps.particles if p.status == ParticleStatus.IN_FLIGHT)
-                wall = sum(1 for p in ps.particles if p.status == ParticleStatus.HIT_WALL)
-                print(f"U={u:.1f}V: Anode={hits}, Wall={wall}, Flight={in_flight} (Steps taken: {step})")
-
-        # 2. Данные по энергиям (на максимальном напряжении)
-        print("--- Расчет спектра энергий ---")
+        # 3. Финальный прогон на максимальном напряжении (для гистограмм и траекторий)
+        # Делаем его в основном потоке, так как нам нужны объекты частиц целиком
+        print("--- Финальный прогон для анализа спектра ---")
         ps_final = ParticleSystem(self.cfg)
-        spawn_func(ps_final)
+        ps_final.spawn_particles_manual(x_spawn, y_range)
 
-        # Тоже используем умный цикл для финального прогона
         step = 0
         while step < self.cfg.sim.total_steps * 5:
             ps_final.update(self.grid, voltage_scale=1.0)
@@ -114,17 +90,6 @@ class StatisticsAnalyzer:
 
         energies = [p.kinetic_energy_ev for p in ps_final.particles if p.status == ParticleStatus.HIT_ANODE]
 
-        print(f"Финальный прогон: долетело {len(energies)} из {len(ps_final.particles)}")
-        if len(energies) == 0:
-            # Выведем статус всех частиц для отладки
-            status_counts = {}
-            for p in ps_final.particles:
-                s = p.status.name
-                status_counts[s] = status_counts.get(s, 0) + 1
-            print(f"ПОЧЕМУ ПУСТО? Статусы частиц: {status_counts}")
-
-        # 3. Фазовый портрет (опционально, можно оставить пустым пока)
-
         return {
             "iv_curve": (voltages, transmission_rates),
             "energy_hist": energies,
@@ -132,60 +97,52 @@ class StatisticsAnalyzer:
         }
 
     def plot_dashboard(self, stats_data):
-        """Рисует красивое окно с графиками"""
+        """Визуализация результатов"""
         voltages, currents = stats_data["iv_curve"]
         energies = stats_data["energy_hist"]
+        final_ps = stats_data["final_ps"]
 
-        fig = plt.figure(figsize=(14, 8))
+        fig = plt.figure(figsize=(14, 10))
         gs = fig.add_gridspec(2, 2)
 
         # График 1: ВАХ
         ax1 = fig.add_subplot(gs[0, 0])
-        ax1.plot(voltages, currents, 'o-', color='orange', linewidth=2)
-        ax1.set_title("ВАХ (Пропускание тока)")
+        ax1.plot(voltages, currents, 'o-', color='orange', markersize=3, linewidth=1.5)
+        ax1.set_title("ВАХ (Токопрохождение)")
         ax1.set_xlabel("Напряжение Анода (В)")
-        ax1.set_ylabel("Токопрохождение (%)")
-        ax1.grid(True, alpha=0.3)
+        ax1.set_ylabel("Прозрачность (%)")
+        ax1.grid(True, which='both', alpha=0.3)
         ax1.set_ylim(-5, 105)
 
         # График 2: Энергетический спектр
         ax2 = fig.add_subplot(gs[0, 1])
         if len(energies) > 0:
-            ax2.hist(energies, bins=10, color='cyan', edgecolor='black', alpha=0.7)
-        ax2.set_title("Спектр энергий на Аноде")
+            ax2.hist(energies, bins=20, color='cyan', edgecolor='black', alpha=0.7)
+            ax2.set_title(f"Спектр энергий (U_max={self.cfg.user.max_voltage}В)")
+        else:
+            ax2.text(0.5, 0.5, "Нет данных (0% прохождения)", ha='center')
         ax2.set_xlabel("Энергия (эВ)")
         ax2.set_ylabel("Кол-во частиц")
-        ax2.grid(True, alpha=0.3)
+        ax2.grid(True, alpha=0.2)
 
-        # График 3: Разброс пучка (Y-координаты попадания)
+        # График 3: Фокусировка
         ax3 = fig.add_subplot(gs[1, :])
-        final_ps = stats_data["final_ps"]
+        hits = [p for p in final_ps.particles if p.status == ParticleStatus.HIT_ANODE]
 
-        # Собираем точки
-        end_points_y = [p.r[1] for p in final_ps.particles if p.status == ParticleStatus.HIT_ANODE]
-        start_points_y = [p.trajectory[0][1] for p in final_ps.particles if p.status == ParticleStatus.HIT_ANODE]
+        if hits:
+            end_y = [p.r[1] for p in hits]
+            start_y = [p.trajectory[0][1] for p in hits]
+            e_vals = [p.kinetic_energy_ev for p in hits]
 
-        if len(end_points_y) > 0:
-            # Рисуем точки попаданий
-            sc = ax3.scatter(start_points_y, end_points_y, c=energies, cmap='plasma', label="Попадания")
-
-            # Рисуем идеальную прямую (reference)
-            min_y, max_y = min(start_points_y), max(start_points_y)
-            ax3.plot([min_y, max_y], [min_y, max_y], 'k--', alpha=0.5, label="Идеальная прямая")
-
-            # ВАЖНО: Вызов legend теперь ВНУТРИ if
+            sc = ax3.scatter(start_y, end_y, c=e_vals, cmap='viridis', s=20, alpha=0.8)
+            ax3.plot([min(start_y), max(start_y)], [min(start_y), max(start_y)], 'r--', alpha=0.5, label="Идеал")
+            plt.colorbar(sc, ax=ax3, label="Энергия (эВ)")
             ax3.legend()
 
-            # Можно добавить colorbar для энергий, раз уж мы используем цвета
-            plt.colorbar(sc, ax=ax3, label="Энергия (эВ)")
-        else:
-            # Если никто не долетел, пишем об этом
-            ax3.text(0.5, 0.5, "Нет попаданий в Анод", ha='center', va='center', transform=ax3.transAxes)
-
-        ax3.set_title("Фокусировка (Start Y vs End Y)")
-        ax3.set_xlabel("Точка вылета Y (мм)")
-        ax3.set_ylabel("Точка прилета Y (мм)")
-        ax3.grid(True)
+        ax3.set_title("Анализ смещения (Y_start vs Y_end)")
+        ax3.set_xlabel("Y вылета (мм)")
+        ax3.set_ylabel("Y прилета (мм)")
+        ax3.grid(True, alpha=0.2)
 
         plt.tight_layout()
         plt.show()

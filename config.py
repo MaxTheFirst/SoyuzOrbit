@@ -17,6 +17,7 @@ class UserParams:
     resolution_quality: int = 100  # Кол-во ячеек по ширине (Grid density)
     time_accuracy: float = 0.2  # Коэф. Куранта (меньше = точнее и медленнее). 0.1-0.5 ок.
     solver_precision: str = "High"  # Low, Medium, High
+    max_stat_simulation_steps: int = 20
 
 
 # --- 2. АВТОМАТИЧЕСКИЕ КОНФИГИ (ВЫЧИСЛЯЕМЫЕ) ---
@@ -146,9 +147,9 @@ class SimulationConfig:
 @dataclass
 class BeamConfig:
     spawn_offset_mm: float = 0.01
-    particles_count: int = 20
-    spread_ratio: float = 0.4
-
+    particles_count: int = 500
+    spread_ratio: float = 0.8
+    thermal_energy_ev: float = 10.0
 
 @dataclass
 class AppConfig:
