@@ -31,6 +31,8 @@ class PhysicsConfig:
 
 @dataclass
 class GridConfig:
+    eps0 = 8.854e-12
+
     user: UserParams
 
     @property
@@ -79,7 +81,7 @@ class SolverConfig:
     def max_iterations(self):
         # Эвристика: кол-во итераций ~ N^2 для простых методов, но линейно растет с размером
         # База 1000, плюс добавка от количества ячеек
-        base = 1000
+        base = 8000
         scale = 1.0
         if self.user.solver_precision == "High": scale = 2.0
         if self.user.solver_precision == "Low": scale = 0.5
@@ -90,9 +92,9 @@ class SolverConfig:
 
     @property
     def tolerance(self):
-        if self.user.solver_precision == "High": return 1e-4
-        if self.user.solver_precision == "Low": return 1e-2
-        return 1e-3
+        if self.user.solver_precision == "High": return 1e-5
+        if self.user.solver_precision == "Low": return 1e-3
+        return 1e-4
 
 
 @dataclass
@@ -149,7 +151,7 @@ class BeamConfig:
     spawn_offset_mm: float = 0.01
     particles_count: int = 500
     spread_ratio: float = 0.8
-    thermal_energy_ev: float = 10.0
+    thermal_energy_ev: float = .2
 
 @dataclass
 class AppConfig:

@@ -4,35 +4,51 @@ from concurrent.futures import ProcessPoolExecutor
 from simulation.particles import ParticleStatus, ParticleSystem
 import copy
 
+from simulation.solver import LaplaceSolver
+
 
 # Глобальная функция-воркер для параллельных вычислений
 # Она должна быть вне класса, чтобы корректно работать в мультипроцессинге
-def _voltage_worker(u, max_v, cfg, grid, x_spawn, y_range):
-    """Симуляция одной точки напряжения на отдельном ядре"""
-    scale = u / max_v if max_v != 0 else 0
+def _voltage_worker(u, max_v, cfg, grid_template, x_spawn, y_range):
+    """Исправленный воркер: берет лимиты из конфига и не 'падает'"""
+    grid = copy.deepcopy(grid_template)
 
-    # Создаем локальную систему частиц для этого процесса
-    ps = ParticleSystem(cfg)
+    # Устанавливаем напряжение анода
+    for comp in grid.components:
+        if "Anode" in comp.name:
+            comp.voltage = u
+            comp.apply_to_grid(grid.potential, grid.fixed_mask, grid.structure_map, 2, grid.cfg.resolution)
 
-    # Используем твой метод ручного спавна с учетом разброса
-    ps.spawn_particles_manual(x_spawn, y_range)
+    solver = LaplaceSolver()
+    target_current = 0.5
 
-    # Запас шагов для медленных частиц при низком U
-    max_steps_safety = cfg.sim.total_steps * 10
+    # 1. Сначала решаем Лапласа (без заряда) как начальное приближение.
+    # Это в разы ускорит последующую сходимость Пуассона.
+    grid.clear_charge()
+    solver.solve(grid, max_iter=cfg.solver.max_iterations, tolerance=cfg.solver.tolerance)
 
-    step = 0
-    while step < max_steps_safety:
-        ps.update(grid, voltage_scale=scale)
-        # Оптимизация: проверяем живых раз в 100 шагов
-        if step % 100 == 0:
-            active_count = sum(1 for p in ps.particles if p.status == ParticleStatus.IN_FLIGHT)
-            if active_count == 0:
+    # 2. Цикл самосогласования (Пуассон)
+    for _ in range(3):  # 3 итераций "поле-частицы" достаточно для точки ВАХ
+        grid.calculate_field()
+
+        old_rho = grid.rho.copy()
+        grid.clear_charge()
+
+        ps = ParticleSystem(cfg)
+        ps.spawn_particles_manual(x_spawn, y_range)
+
+        for _ in range(cfg.sim.total_steps):
+            ps.update(grid, total_current_a=target_current)
+            if not any(p.status == ParticleStatus.IN_FLIGHT for p in ps.particles):
                 break
-        step += 1
+
+        grid.rho = 0.5 * grid.rho + 0.5 * old_rho
+
+        # Используем лимиты из конфига! (Обычно 5000+)
+        solver.solve(grid, max_iter=cfg.solver.max_iterations, tolerance=cfg.solver.tolerance)
 
     hits = sum(1 for p in ps.particles if p.status == ParticleStatus.HIT_ANODE)
-    total = len(ps.particles)
-    return (hits / total) * 100 if total > 0 else 0
+    return (hits / len(ps.particles)) * 100 if ps.particles else 0
 
 
 class StatisticsAnalyzer:

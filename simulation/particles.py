@@ -52,19 +52,30 @@ class ParticleSystem:
 
             self.particles.append(p)
 
-    def update(self, grid, voltage_scale=1.0):
+    def update(self, grid, voltage_scale=1.0, total_current_a=0.1):
         """
-        voltage_scale: множитель поля.
-        Позволяет симулировать разные напряжения без пересчета сетки Лапласа!
+        grid: объект SimulationGrid
+        voltage_scale: множитель потенциала
+        total_current_a: Полный ток пучка в Амперах (на 1 метр глубины в 2D)
         """
         dt = self.cfg.sim.dt
+        res = self.cfg.grid.resolution
         scale_si = 1.0 / self.cfg.physics.meters_per_unit
+
+        # 1. Считаем, сколько заряда 'вносит' одна макрочастица за один шаг dt
+        # dQ = (I_total * dt) / N_particles
+        if len(self.particles) == 0: return
+        charge_step = (total_current_a * dt) / len(self.particles)
+
+        # Объем ячейки (в 2D считаем глубину 1 метр)
+        h_m = res / 1000.0
+        cell_volume = h_m * h_m * 1.0
 
         for p in self.particles:
             if p.status != ParticleStatus.IN_FLIGHT: continue
 
-            ix_old = int(p.r[0] / self.cfg.grid.resolution)
-            iy_old = int(p.r[1] / self.cfg.grid.resolution)
+            ix_old = int(p.r[0] / res)
+            iy_old = int(p.r[1] / res)
 
             # 1. Проверка границ
             if ix_old < 0 or ix_old >= self.cfg.grid.nx or iy_old < 0 or iy_old >= self.cfg.grid.ny:
@@ -73,6 +84,9 @@ class ParticleSystem:
 
             # 2. Физика с учетом voltage_scale
             phi_old = grid.potential[iy_old, ix_old] * voltage_scale
+
+            # Электроны несут минус, поэтому вычитаем плотность
+            grid.rho[iy_old, ix_old] -= charge_step / cell_volume
 
             # E_new = E_calculated * (U_current / U_calculated)
             Ex_si = grid.ex[iy_old, ix_old] * scale_si * voltage_scale
@@ -86,6 +100,14 @@ class ParticleSystem:
 
             p.r[0] += (p.v[0] * dt) * scale_si
             p.r[1] += (p.v[1] * dt) * scale_si
+
+            if not np.isfinite(p.r[0]) or not np.isfinite(p.r[1]):
+                p.status = ParticleStatus.OUT_OF_BOUNDS
+                continue
+
+            if p.v[0] < -0.1:  # Небольшой порог
+                p.status = ParticleStatus.HIT_CATHODE
+                continue
 
             ix_new = int(p.r[0] / self.cfg.grid.resolution)
             iy_new = int(p.r[1] / self.cfg.grid.resolution)

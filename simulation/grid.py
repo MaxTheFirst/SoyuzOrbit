@@ -20,6 +20,10 @@ class SimulationGrid:
 
         self._components_data = []
 
+        self.rho = np.zeros((self.cfg.ny, self.cfg.nx))
+
+        self.eps0 = self.cfg.eps0
+
     @property
     def components(self):
         """Возвращает только список компонентов, как раньше"""
@@ -60,3 +64,7 @@ class SimulationGrid:
         self.potential[~self.fixed_mask] = 0
         for comp in self.components:
             comp.apply_to_grid(self.potential, self.fixed_mask, self.cfg.resolution)
+
+    def clear_charge(self):
+        """Обнуляет накопленный заряд в пространстве"""
+        self.rho.fill(0.0)
