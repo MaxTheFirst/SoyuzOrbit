@@ -12,7 +12,7 @@ class UserParams:
 
     # Физика
     max_voltage: float = 2000.0  # Опорное напряжение (для расчета скорости)
-    grid_voltage_bias: float = -150.0  # Напряжение на сетке (отрицательное относительно катода!)
+    grid_voltage_bias: float = -50.0  # Напряжение на сетке (отрицательное относительно катода!)
     # Настройки качества (ползунки)
     resolution_quality: int = 100  # Кол-во ячеек по ширине (Grid density)
     time_accuracy: float = 0.2  # Коэф. Куранта (меньше = точнее и медленнее). 0.1-0.5 ок.
@@ -66,9 +66,9 @@ class LayoutConfig:
     anode_width: float = 0.05
     anode_height: float = 0.8
 
-    grid_pos_x: float = 0.20  # Сетка стоит близко к катоду
-    grid_width: float = 0.10
-    grid_gap_ratio: float = 0.80  # Размер щели (80% от высоты экрана)
+    grid_pos_x: float = 0.25  # Сетка стоит близко к катоду
+    grid_width: float = 0.05
+    grid_gap_ratio: float = 0.40  # Размер щели (40% от высоты экрана)
 
 
 @dataclass

@@ -35,10 +35,10 @@ def setup_scenario_dynamic(grid, cfg):
     c_x, c_y = get_rect_coords(layout.cathode_pos_x, layout.cathode_width, layout.cathode_height, w, h)
     grid.add_component(RectangleElectrode("Cathode", cathode_v, c_x, c_y))
 
-    # g_x_pos = w * layout.grid_pos_x
-    # g_width = w * layout.grid_width
-    # g_gap = h * layout.grid_gap_ratio
-    # grid.add_component(SplitGrid("Grid", grid_v, g_x_pos, g_width, g_gap, h))
+    g_x_pos = w * layout.grid_pos_x
+    g_width = w * layout.grid_width
+    g_gap = h * layout.grid_gap_ratio
+    grid.add_component(SplitGrid("Grid", grid_v, g_x_pos, g_width, g_gap, h))
 
     a_x, a_y = get_rect_coords(layout.anode_pos_x, layout.anode_width, layout.anode_height, w, h)
     grid.add_component(RectangleElectrode("Anode", anode_v, a_x, a_y))

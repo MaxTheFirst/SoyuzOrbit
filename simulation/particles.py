@@ -11,6 +11,7 @@ class ParticleStatus(Enum):
     HIT_CATHODE = 2
     HIT_WALL = 3
     OUT_OF_BOUNDS = 4
+    HIT_GRID = 5
 
 
 class Particle:
@@ -139,6 +140,8 @@ class ParticleSystem:
                     p.kinetic_energy_ev = total_joules / abs(p.q)
                 elif obj_id == 1:  # Cathode ID
                     p.status = ParticleStatus.HIT_CATHODE
+                elif obj_id == 4:  # Grid ID
+                    p.status = ParticleStatus.HIT_GRID
                 else:
                     p.status = ParticleStatus.HIT_WALL
                 continue
