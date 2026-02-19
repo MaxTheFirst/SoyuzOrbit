@@ -1,8 +1,6 @@
 import numpy as np
 from enum import Enum
 
-from fontTools.ufoLib.utils import deprecated
-
 
 # Добавляем перечисление для статусов
 class ParticleStatus(Enum):
@@ -31,7 +29,6 @@ class ParticleSystem:
         self.particles = []
         self.cfg = config
 
-    @deprecated("Старая версия")
     def old_spawn_particles_manual(self, x_pos, y_range):
         ys = np.linspace(y_range[0], y_range[1], self.cfg.beam.particles_count)
         for y in ys:

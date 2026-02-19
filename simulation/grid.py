@@ -30,8 +30,6 @@ class SimulationGrid:
         return [c for c, _ in self._components_data]
 
     def add_component(self, component):
-        self.components.append(component)
-
         obj_id = 0
         if "Cathode" in component.name:
             obj_id = 1

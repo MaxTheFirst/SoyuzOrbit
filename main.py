@@ -1,4 +1,3 @@
-import numpy as np
 from config import AppConfig, UserParams
 from simulation.grid import SimulationGrid
 from simulation.components import RectangleElectrode, SplitGrid

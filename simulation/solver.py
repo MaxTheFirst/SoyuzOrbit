@@ -30,7 +30,6 @@ class LaplaceSolver:
         return False
 
     @staticmethod
-    @staticmethod
     def _step_gauss_seidel(phi, rho, mask, h_meters, eps0, max_v):
         """
         Стабильный метод SOR с ограничением значений
@@ -56,4 +55,5 @@ class LaplaceSolver:
         new_values = np.clip(new_values, -abs(max_v), abs(max_v))
 
         internal_mask = mask[1:-1, 1:-1]
-        phi[1:-1, 1:-1][~internal_mask] = new_values[~internal_mask]
+        region = phi[1:-1, 1:-1]
+        region[~internal_mask] = new_values[~internal_mask]
