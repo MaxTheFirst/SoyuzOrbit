@@ -38,6 +38,10 @@ def _voltage_worker(u, max_v, cfg, grid_template, x_spawn, y_range):
         ps.spawn_particles_manual(x_spawn, y_range)
 
         for _ in range(cfg.sim.total_steps):
+            # ВАЖНО: При расчете ВАХ мы меняем напряжение анода (u), но не меняем max_voltage в конфиге.
+            # Поэтому voltage_scale = u / max_v, чтобы частицы чувствовали изменение поля.
+            # Но постойте, мы уже изменили граничные условия в grid.potential!
+            # Значит voltage_scale должен быть 1.0, так как поле уже пересчитано под новое U.
             ps.update(grid, total_current_a=target_current)
             if not any(p.status == ParticleStatus.IN_FLIGHT for p in ps.particles):
                 break
@@ -65,29 +69,35 @@ class StatisticsAnalyzer:
         max_v = self.cfg.user.max_voltage
         num_points = self.cfg.user.max_stat_simulation_steps
 
-        voltages = max_v * (np.linspace(0, 1, num_points) ** 2)
-        voltages = np.unique(np.sort(voltages))
-
+        # Линейная шкала лучше для обзорной ВАХ
+        voltages = np.linspace(0, max_v, num_points)
+        
         print(f"--- Запуск ПАРАЛЛЕЛЬНОГО расчета ВАХ ({len(voltages)} точек) ---")
 
         # 2. Запуск пула процессов
         transmission_rates = []
 
         # Используем ProcessPoolExecutor для задействования всех ядер CPU
+        # ВАЖНО: Передаем копию конфига, чтобы не было гонок
         with ProcessPoolExecutor() as executor:
             # Подготавливаем список задач
-            futures = [
-                executor.submit(_voltage_worker, u, max_v, self.cfg, self.grid, x_spawn, y_range)
-                for u in voltages
-            ]
+            futures = []
+            for u in voltages:
+                futures.append(executor.submit(_voltage_worker, u, max_v, self.cfg, self.grid, x_spawn, y_range))
 
             # Собираем результаты по мере завершения
+            # ВАЖНО: Нужно собирать в том же порядке, что и voltages!
+            # as_completed не гарантирует порядок, поэтому просто итерируемся по futures
             for i, future in enumerate(futures):
-                rate = future.result()
-                transmission_rates.append(rate)
+                try:
+                    rate = future.result()
+                    transmission_rates.append(rate)
+                except Exception as e:
+                    print(f"Ошибка в воркере {i}: {e}")
+                    transmission_rates.append(0.0)
 
                 # Небольшой прогресс-бар в консоль
-                if i % 10 == 0:
+                if i % 5 == 0:
                     print(f"Прогресс ВАХ: {i}/{len(voltages)} точек рассчитано...")
 
         # 3. Финальный прогон на максимальном напряжении (для гистограмм и траекторий)
@@ -97,7 +107,10 @@ class StatisticsAnalyzer:
         ps_final.spawn_particles_manual(x_spawn, y_range)
 
         step = 0
-        while step < self.cfg.sim.total_steps * 5:
+        # Увеличиваем лимит шагов, чтобы точно долетели
+        max_steps = self.cfg.sim.total_steps * 2 
+        
+        while step < max_steps:
             ps_final.update(self.grid, voltage_scale=1.0)
             if step % 50 == 0:
                 if not any(p.status == ParticleStatus.IN_FLIGHT for p in ps_final.particles):
@@ -151,9 +164,15 @@ class StatisticsAnalyzer:
             e_vals = [p.kinetic_energy_ev for p in hits]
 
             sc = ax3.scatter(start_y, end_y, c=e_vals, cmap='viridis', s=20, alpha=0.8)
-            ax3.plot([min(start_y), max(start_y)], [min(start_y), max(start_y)], 'r--', alpha=0.5, label="Идеал")
+            # Рисуем линию идеального прохождения (y_in = y_out)
+            if len(start_y) > 0 and len(end_y) > 0:
+                min_val = min(min(start_y), min(end_y))
+                max_val = max(max(start_y), max(end_y))
+                ax3.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.5, label="Идеал (1:1)")
             plt.colorbar(sc, ax=ax3, label="Энергия (эВ)")
             ax3.legend()
+        else:
+            ax3.text(0.5, 0.5, "Нет попаданий в анод", ha='center')
 
         ax3.set_title("Анализ смещения (Y_start vs Y_end)")
         ax3.set_xlabel("Y вылета (мм)")

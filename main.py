@@ -1,7 +1,7 @@
 import numpy as np
 from config import AppConfig, UserParams
 from simulation.grid import SimulationGrid
-from simulation.components import RectangleElectrode, SplitGrid
+from simulation.components import RectangleElectrode, SplitGrid, CurvedCathode
 from simulation.solver import LaplaceSolver
 from simulation.particles import ParticleSystem, ParticleStatus
 from analysis.stats import StatisticsAnalyzer
@@ -32,8 +32,25 @@ def setup_scenario_dynamic(grid, cfg):
     anode_v = +half_voltage
     grid_v = cathode_v + cfg.user.grid_voltage_bias
 
-    c_x, c_y = get_rect_coords(layout.cathode_pos_x, layout.cathode_width, layout.cathode_height, w, h)
-    grid.add_component(RectangleElectrode("Cathode", cathode_v, c_x, c_y))
+    # --- ЗАМЕНА КАТОДА НА ИЗОГНУТЫЙ ---
+    # c_x, c_y = get_rect_coords(layout.cathode_pos_x, layout.cathode_width, layout.cathode_height, w, h)
+    # grid.add_component(RectangleElectrode("Cathode", cathode_v, c_x, c_y))
+    
+    # Центр катода по X
+    c_center_x = w * layout.cathode_pos_x
+    c_center_y = h / 2
+    c_height = h * layout.cathode_height
+    
+    # Добавляем изогнутый катод
+    grid.add_component(CurvedCathode(
+        name="Cathode",
+        voltage=cathode_v,
+        x_center_mm=c_center_x,
+        y_center_mm=c_center_y,
+        radius_mm=layout.cathode_radius_mm,
+        height_mm=c_height,
+        thickness_mm=1.0
+    ))
 
     g_x_pos = w * layout.grid_pos_x
     g_width = w * layout.grid_width
@@ -43,7 +60,14 @@ def setup_scenario_dynamic(grid, cfg):
     a_x, a_y = get_rect_coords(layout.anode_pos_x, layout.anode_width, layout.anode_height, w, h)
     grid.add_component(RectangleElectrode("Anode", anode_v, a_x, a_y))
 
-    return c_x[1], c_y
+    # Возвращаем параметры для спавна частиц
+    # Спавним чуть правее поверхности катода
+    # Поверхность катода (самая правая точка дуги) находится в x = c_center_x
+    # (так как мы строили дугу влево от центра кривизны, но x_center_mm в CurvedCathode 
+    #  это координата самой дуги на оси симметрии, если R >> h)
+    # Уточнение: в CurvedCathode x_center_mm - это координата вершины дуги.
+    
+    return c_center_x, (c_center_y - c_height/2, c_center_y + c_height/2)
 
 
 def main():
@@ -52,17 +76,23 @@ def main():
             width_mm=40.0,
             max_voltage=2000.0,
             resolution_quality=150,
-            time_accuracy=0.15
+            time_accuracy=0.15,
+            gas_pressure_pa=1e-3 # Вакуум по умолчанию, можно менять
         )
     )
 
     grid = SimulationGrid(cfg)
-    cathode_right_edge, cathode_y_range = setup_scenario_dynamic(grid, cfg)
+    cathode_vertex_x, cathode_y_range = setup_scenario_dynamic(grid, cfg)
     solver = LaplaceSolver(method=cfg.solver.method)
 
     def spawn_closure():
         """Логика координат спавна частиц"""
-        spawn_x = cathode_right_edge + cfg.beam.spawn_offset_mm
+        # Спавним частицы повторяя форму катода (упрощенно - по дуге)
+        # Или просто на плоскости перед ним, если R большой.
+        # Для простоты пока спавним на плоскости чуть правее вершины.
+        spawn_x = cathode_vertex_x + cfg.beam.spawn_offset_mm
+        
+        # Высота пучка чуть меньше высоты катода
         c_height = cathode_y_range[1] - cathode_y_range[0]
         beam_height = c_height * cfg.beam.spread_ratio
         center_y = cfg.grid.height_mm / 2

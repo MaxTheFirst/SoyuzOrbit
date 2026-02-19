@@ -1,3 +1,5 @@
+import numpy as np
+
 class SimulationComponent:
     def __init__(self, name: str):
         self.name = name
@@ -31,6 +33,68 @@ class RectangleElectrode(SimulationComponent):
         grid_mask[y_start:y_end, x_start:x_end] = True
         if obj_id > 0:
             grid_struct[y_start:y_end, x_start:x_end] = obj_id
+
+class CurvedCathode(SimulationComponent):
+    """
+    Катод в форме дуги окружности для фокусировки пучка.
+    Вогнутая поверхность (центр кривизны справа).
+    """
+    def __init__(self, name: str, voltage: float, x_center_mm: float, y_center_mm: float, 
+                 radius_mm: float, height_mm: float, thickness_mm: float = 1.0):
+        super().__init__(name)
+        self.voltage = voltage
+        self.xc = x_center_mm
+        self.yc = y_center_mm
+        self.R = radius_mm
+        self.h = height_mm
+        self.thickness = thickness_mm
+
+    def apply_to_grid(self, grid_potential, grid_mask, grid_struct, obj_id, resolution):
+        ny, nx = grid_potential.shape
+        
+        # Центр кривизны находится справа от катода на расстоянии R
+        # То есть сама поверхность катода это левая часть окружности
+        # Координаты центра окружности (фокуса):
+        circle_x0 = self.xc + self.R 
+        circle_y0 = self.yc
+
+        # Проходим по bounding box для оптимизации
+        # Катод находится в районе xc.
+        x_min_idx = int((self.xc - self.thickness) / resolution)
+        x_max_idx = int((self.xc + self.R) / resolution) # С запасом
+        y_min_idx = int((self.yc - self.h/2 - self.thickness) / resolution)
+        y_max_idx = int((self.yc + self.h/2 + self.thickness) / resolution)
+
+        x_min_idx = max(0, x_min_idx)
+        x_max_idx = min(nx, x_max_idx)
+        y_min_idx = max(0, y_min_idx)
+        y_max_idx = min(ny, y_max_idx)
+
+        for iy in range(y_min_idx, y_max_idx):
+            y_mm = iy * resolution
+            
+            # Проверяем, попадает ли Y в высоту катода
+            if abs(y_mm - self.yc) > self.h / 2:
+                continue
+
+            for ix in range(x_min_idx, x_max_idx):
+                x_mm = ix * resolution
+                
+                # Уравнение окружности: (x - x0)^2 + (y - y0)^2 = R^2
+                dist_sq = (x_mm - circle_x0)**2 + (y_mm - circle_y0)**2
+                dist = np.sqrt(dist_sq)
+
+                # Катод имеет толщину. Мы рисуем его между R и R + thickness
+                # Но так как он вогнутый влево, то поверхность это R, а "мясо" слева от R.
+                # Значит условие: R <= dist <= R + thickness ? Нет.
+                # Центр справа. Поверхность катода это точки на расстоянии R.
+                # Точки левее имеют расстояние > R.
+                
+                if self.R <= dist <= self.R + self.thickness:
+                    grid_potential[iy, ix] = self.voltage
+                    grid_mask[iy, ix] = True
+                    if obj_id > 0:
+                        grid_struct[iy, ix] = obj_id
 
 
 class SplitGrid(SimulationComponent):

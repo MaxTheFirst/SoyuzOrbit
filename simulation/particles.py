@@ -63,6 +63,17 @@ class ParticleSystem:
         res = self.cfg.grid.resolution
         scale_si = 1.0 / self.cfg.physics.meters_per_unit
 
+        # Параметры газа
+        gas_pressure = self.cfg.user.gas_pressure_pa
+        has_gas = gas_pressure > 1e-5 # Порог учета газа
+        
+        if has_gas:
+            # Концентрация нейтралов n = P / (kT)
+            n_gas = gas_pressure / (self.cfg.physics.kb * self.cfg.physics.temperature_k)
+            # Вероятность столкновения за шаг dt: P = 1 - exp(-n * sigma * v * dt)
+            # При малых dt: P ~ n * sigma * v * dt
+            sigma = self.cfg.physics.sigma_gas
+
         # 1. Считаем, сколько заряда 'вносит' одна макрочастица за один шаг dt
         # dQ = (I_total * dt) / N_particles
         if len(self.particles) == 0: return
@@ -98,6 +109,18 @@ class ParticleSystem:
 
             p.v[0] += ax * dt
             p.v[1] += ay * dt
+            
+            # --- СТОЛКНОВЕНИЯ С ГАЗОМ ---
+            if has_gas:
+                v_mag = np.sqrt(p.v[0]**2 + p.v[1]**2)
+                if v_mag > 1000: # Не рассеиваем совсем медленные
+                    prob = n_gas * sigma * v_mag * dt
+                    if np.random.random() < prob:
+                        # Упругое рассеяние: меняем направление скорости случайно
+                        # Энергия сохраняется (почти, т.к. масса электрона мала)
+                        angle = np.random.uniform(0, 2 * np.pi)
+                        p.v[0] = v_mag * np.cos(angle)
+                        p.v[1] = v_mag * np.sin(angle)
 
             p.r[0] += (p.v[0] * dt) * scale_si
             p.r[1] += (p.v[1] * dt) * scale_si
