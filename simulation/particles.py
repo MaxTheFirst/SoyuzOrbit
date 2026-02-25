@@ -50,23 +50,30 @@ class ParticleSystem:
 
             self.particles.append(p)
 
-    def update(self, grid, voltage_scale=1.0, total_current_a=0.1):
+    def update(self, grid, voltage_scale=1.0, total_current_a=None):
         """
         grid: объект SimulationGrid
         voltage_scale: множитель потенциала
-        total_current_a: Полный ток пучка в Амперах (на 1 метр глубины в 2D)
+        total_current_a: Полный ток пучка в Амперах (на 1 метр глубины в 2D).
+        Если None, берется cfg.beam.beam_current_a.
         """
         dt = self.cfg.sim.dt
         res = self.cfg.grid.resolution
         scale_si = 1.0 / self.cfg.physics.meters_per_unit
+        if total_current_a is None:
+            total_current_a = self.cfg.beam.beam_current_a
 
         # 1. Считаем, сколько заряда 'вносит' одна макрочастица за один шаг dt
-        # dQ = (I_total * dt) / N_particles
+        # dQ = (I_total * dt) / N_particles.
+        # macro_charge_scale повышает эффективный заряд "макрочастицы"
+        # и напрямую усиливает space-charge эффект без изменения q/m электрона.
         if len(self.particles) == 0: return
-        charge_step = (total_current_a * dt) / len(self.particles)
+        macro_charge_scale = max(0.0, self.cfg.beam.macro_charge_scale)
+        effective_current_a = total_current_a * macro_charge_scale
+        charge_step = (effective_current_a * dt) / len(self.particles)
 
         # Объем ячейки (в 2D считаем глубину 1 метр)
-        h_m = res / 1000.0
+        h_m = res * self.cfg.physics.meters_per_unit
         cell_volume = h_m * h_m * 1.0
 
         for p in self.particles:

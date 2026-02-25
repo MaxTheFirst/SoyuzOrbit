@@ -9,18 +9,20 @@ from simulation.solver import LaplaceSolver
 
 # Глобальная функция-воркер для параллельных вычислений
 # Она должна быть вне класса, чтобы корректно работать в мультипроцессинге
-def _voltage_worker(u, max_v, cfg, grid_template, x_spawn, y_range):
-    """Исправленный воркер: берет лимиты из конфига и не 'падает'"""
+def _voltage_worker(anode_voltage, cfg, grid_template, x_spawn, y_range):
+    """
+    Считает одну точку ВАХ по заданному абсолютному напряжению анода.
+    """
     grid = copy.deepcopy(grid_template)
 
     # Устанавливаем напряжение анода
     for comp in grid.components:
         if "Anode" in comp.name:
-            comp.voltage = u
+            comp.voltage = anode_voltage
             comp.apply_to_grid(grid.potential, grid.fixed_mask, grid.structure_map, 2, grid.cfg.resolution)
 
     solver = LaplaceSolver()
-    target_current = 0.5
+    target_current = cfg.beam.iv_beam_current_a if cfg.beam.iv_beam_current_a > 0 else cfg.beam.beam_current_a
 
     # 1. Сначала решаем Лапласа (без заряда) как начальное приближение.
     # Это в разы ускорит последующую сходимость Пуассона.
@@ -60,15 +62,20 @@ class StatisticsAnalyzer:
         """
         Основной метод расчета статистики с использованием мультипроцессинга
         """
-        # 1. Формируем массив напряжений с плотностью у нуля (без хардкода)
-        # Степень 6 гарантирует "микроскопический" просмотр начала ВАХ
         max_v = self.cfg.user.max_voltage
-        num_points = self.cfg.user.max_stat_simulation_steps
-
-        voltages = max_v * (np.linspace(0, 1, num_points) ** 2)
-        voltages = np.unique(np.sort(voltages))
-
-        print(f"--- Запуск ПАРАЛЛЕЛЬНОГО расчета ВАХ ({len(voltages)} точек) ---")
+        num_points = max(3, int(self.cfg.user.max_stat_simulation_steps))
+        
+        # Генерация диапазона напряжений, включая отрицательную часть
+        # iv_negative_fraction определяет, насколько глубоко уходим в минус
+        neg_limit = -max_v * self.cfg.user.iv_negative_fraction
+        
+        # Создаем линейный диапазон от отрицательного до положительного максимума
+        anode_voltages = np.linspace(neg_limit, max_v, num_points)
+        
+        print(
+            f"--- Запуск ПАРАЛЛЕЛЬНОГО расчета ВАХ ({len(anode_voltages)} точек), "
+            f"Uанода от {anode_voltages[0]:.1f} до {anode_voltages[-1]:.1f} В ---"
+        )
 
         # 2. Запуск пула процессов
         transmission_rates = []
@@ -77,8 +84,8 @@ class StatisticsAnalyzer:
         with ProcessPoolExecutor() as executor:
             # Подготавливаем список задач
             futures = [
-                executor.submit(_voltage_worker, u, max_v, self.cfg, self.grid, x_spawn, y_range)
-                for u in voltages
+                executor.submit(_voltage_worker, u_anode, self.cfg, self.grid, x_spawn, y_range)
+                for u_anode in anode_voltages
             ]
 
             # Собираем результаты по мере завершения
@@ -88,7 +95,7 @@ class StatisticsAnalyzer:
 
                 # Небольшой прогресс-бар в консоль
                 if i % 10 == 0:
-                    print(f"Прогресс ВАХ: {i}/{len(voltages)} точек рассчитано...")
+                    print(f"Прогресс ВАХ: {i}/{len(anode_voltages)} точек рассчитано...")
 
         # 3. Финальный прогон на максимальном напряжении (для гистограмм и траекторий)
         # Делаем его в основном потоке, так как нам нужны объекты частиц целиком
@@ -107,14 +114,14 @@ class StatisticsAnalyzer:
         energies = [p.kinetic_energy_ev for p in ps_final.particles if p.status == ParticleStatus.HIT_ANODE]
 
         return {
-            "iv_curve": (voltages, transmission_rates),
+            "iv_curve": (anode_voltages, transmission_rates),
             "energy_hist": energies,
             "final_ps": ps_final
         }
 
     def plot_dashboard(self, stats_data):
         """Визуализация результатов"""
-        voltages, currents = stats_data["iv_curve"]
+        anode_voltages, currents = stats_data["iv_curve"]
         energies = stats_data["energy_hist"]
         final_ps = stats_data["final_ps"]
 
@@ -123,12 +130,17 @@ class StatisticsAnalyzer:
 
         # График 1: ВАХ
         ax1 = fig.add_subplot(gs[0, 0])
-        ax1.plot(voltages, currents, 'o-', color='orange', markersize=3, linewidth=1.5)
+        ax1.plot(anode_voltages, currents, 'o-', color='orange', markersize=3, linewidth=1.5)
         ax1.set_title("ВАХ (Токопрохождение)")
         ax1.set_xlabel("Напряжение Анода (В)")
         ax1.set_ylabel("Прозрачность (%)")
         ax1.grid(True, which='both', alpha=0.3)
         ax1.set_ylim(-5, 105)
+        
+        # Добавляем вертикальную линию на 0 вольт
+        ax1.axvline(x=0, color='gray', linestyle='--', alpha=0.5)
+        # Добавляем горизонтальную линию на 0%
+        ax1.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
 
         # График 2: Энергетический спектр
         ax2 = fig.add_subplot(gs[0, 1])

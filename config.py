@@ -18,6 +18,7 @@ class UserParams:
     time_accuracy: float = 0.2  # Коэф. Куранта (меньше = точнее и медленнее). 0.1-0.5 ок.
     solver_precision: str = "High"  # Low, Medium, High
     max_stat_simulation_steps: int = 20
+    iv_negative_fraction: float = 0.8  # Доля max_voltage для отрицательной части Uак (0.8 => глубокий минус)
 
 
 # --- 2. АВТОМАТИЧЕСКИЕ КОНФИГИ (ВЫЧИСЛЯЕМЫЕ) ---
@@ -152,6 +153,13 @@ class BeamConfig:
     particles_count: int = 500
     spread_ratio: float = 0.8
     thermal_energy_ev: float = .2
+    beam_current_a: float = 2.0
+    # Отдельный ток для расчета ВАХ (должен быть мягче self-consistent режима),
+    # иначе кривая может уйти в полную отсечку.
+    iv_beam_current_a: float = 0.5
+    # 1.0 ~= старое поведение проекта до введения масштаба.
+    # Повышайте постепенно (1.2, 1.5, 2.0), иначе легко получить полную отсечку.
+    macro_charge_scale: float = 2.0
 
 @dataclass
 class AppConfig:
