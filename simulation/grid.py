@@ -5,6 +5,7 @@ class SimulationGrid:
     def __init__(self, config):
         # config - это AppConfig, а config.grid - это GridConfig
         self.cfg = config.grid
+        self.medium = getattr(config, "medium", None)
 
         # 1. Потенциал (phi)
         self.potential = np.zeros((self.cfg.ny, self.cfg.nx))
@@ -23,7 +24,12 @@ class SimulationGrid:
 
         self.rho = np.zeros((self.cfg.ny, self.cfg.nx))
 
-        self.eps0 = self.cfg.eps0
+        self.eps0_vacuum = self.cfg.eps0
+        eps_r = 1.0
+        if self.medium is not None:
+            eps_r = max(1e-6, float(getattr(self.medium, "relative_permittivity", 1.0)))
+        # Эффективная диэлектрическая проницаемость среды (eps = eps0 * eps_r).
+        self.eps0 = self.eps0_vacuum * eps_r
 
     @property
     def height_mm(self):

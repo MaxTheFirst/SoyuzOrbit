@@ -68,6 +68,10 @@ def main():
             time_accuracy=0.15
         )
     )
+    print(
+        f"Среда: mode={cfg.medium.mode}, eps_r={cfg.medium.relative_permittivity}, "
+        f"P={cfg.medium.pressure_pa} Па"
+    )
 
     grid = SimulationGrid(cfg)
     cathode_right_edge, cathode_y_range = setup_scenario_dynamic(grid, cfg)

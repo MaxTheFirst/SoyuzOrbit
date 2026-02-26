@@ -36,6 +36,7 @@ class PhysicsConfig:
     e_charge: float = -1.602e-19
     m_electron: float = 9.109e-31
     meters_per_unit: float = 1e-3
+    k_boltzmann: float = 1.380649e-23
 
 
 @dataclass
@@ -186,6 +187,30 @@ class BeamConfig:
     # Фиксированный seed для воспроизводимой статистики ВАХ/спектра.
     stats_random_seed: int = 12345
 
+
+@dataclass
+class MediumConfig:
+    """
+    Параметры окружающей среды.
+    mode:
+      - "vacuum": старая модель без столкновений (по сути вакуум)
+      - "gas": простая модель газа (столкновения + потери энергии)
+    """
+    mode: str = "gas"
+    # Относительная диэлектрическая проницаемость среды (влияет на решение Пуассона).
+    relative_permittivity: float = 1.0006
+
+    # Параметры газа для mode="gas"
+    pressure_pa: float = 20.0
+    temperature_k: float = 300.0
+    collision_cross_section_m2: float = 2e-20
+    inelastic_energy_loss_ev: float = 3.0
+    # 0.0 = почти без изменения направления, 1.0 = полностью случайный угол после столкновения.
+    scattering_strength: float = 0.8
+    # Линейное демпфирование скорости v <- v * (1 - coeff * dt)
+    linear_drag_coeff_s: float = 0.0
+
+
 @dataclass
 class AppConfig:
     # Создаем параметры пользователя
@@ -196,6 +221,7 @@ class AppConfig:
     physics: PhysicsConfig = field(default_factory=PhysicsConfig)
     layout: LayoutConfig = field(default_factory=LayoutConfig)
     beam: BeamConfig = field(default_factory=BeamConfig)
+    medium: MediumConfig = field(default_factory=MediumConfig)
 
     # Остальные конфиги создаем в __post_init__, так как они зависят от user
     grid: GridConfig = field(init=False)

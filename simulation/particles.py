@@ -63,6 +63,31 @@ class ParticleSystem:
         if total_current_a is None:
             total_current_a = self.cfg.beam.beam_current_a
 
+        # Параметры среды (по умолчанию вакуум)
+        medium_cfg = getattr(self.cfg, "medium", None)
+        medium_mode = str(getattr(medium_cfg, "mode", "vacuum")).strip().lower() if medium_cfg else "vacuum"
+        medium_is_gas = medium_mode == "gas"
+
+        drag_coeff_s = 0.0
+        mean_free_path_m = np.inf
+        inelastic_loss_j = 0.0
+        scattering_strength = 1.0
+        if medium_is_gas:
+            drag_coeff_s = max(0.0, float(getattr(medium_cfg, "linear_drag_coeff_s", 0.0)))
+            pressure_pa = max(0.0, float(getattr(medium_cfg, "pressure_pa", 0.0)))
+            temperature_k = max(1.0, float(getattr(medium_cfg, "temperature_k", 300.0)))
+            sigma_m2 = max(0.0, float(getattr(medium_cfg, "collision_cross_section_m2", 0.0)))
+            scattering_strength = min(1.0, max(0.0, float(getattr(medium_cfg, "scattering_strength", 1.0))))
+
+            n_density = 0.0
+            if pressure_pa > 0.0 and sigma_m2 > 0.0:
+                n_density = pressure_pa / (self.cfg.physics.k_boltzmann * temperature_k)
+            if n_density > 0.0 and sigma_m2 > 0.0:
+                mean_free_path_m = 1.0 / (n_density * sigma_m2)
+
+            inelastic_loss_ev = max(0.0, float(getattr(medium_cfg, "inelastic_energy_loss_ev", 0.0)))
+            inelastic_loss_j = inelastic_loss_ev * abs(self.cfg.physics.e_charge)
+
         # 1. Считаем, сколько заряда 'вносит' одна макрочастица за один шаг dt
         # dQ = (I_total * dt) / N_particles.
         # macro_charge_scale повышает эффективный заряд "макрочастицы"
@@ -72,7 +97,7 @@ class ParticleSystem:
         effective_current_a = total_current_a * macro_charge_scale
         charge_step = (effective_current_a * dt) / len(self.particles)
 
-        # Объем ячейки (в 2D считаем глубину 1 метр)
+        # Объем ячейки в 2D->3D пересчете: h*h*depth_m
         h_m = res * self.cfg.physics.meters_per_unit
         depth_m = max(1e-9, float(getattr(self.cfg.beam, "depth_m", 1.0)))
         cell_volume = h_m * h_m * depth_m
@@ -103,6 +128,34 @@ class ParticleSystem:
 
             p.v[0] += ax * dt
             p.v[1] += ay * dt
+
+            # В газовой среде добавляем простую модель торможения и столкновений.
+            if medium_is_gas:
+                if drag_coeff_s > 0.0:
+                    damping = max(0.0, 1.0 - drag_coeff_s * dt)
+                    p.v *= damping
+
+                speed = float(np.hypot(p.v[0], p.v[1]))
+                if speed > 0.0 and np.isfinite(mean_free_path_m) and mean_free_path_m > 0.0:
+                    p_coll = 1.0 - np.exp(-speed * dt / mean_free_path_m)
+                    if np.random.random() < p_coll:
+                        e_before_j = 0.5 * p.m * speed * speed
+                        e_after_j = max(0.0, e_before_j - inelastic_loss_j)
+                        speed_after = np.sqrt(2.0 * e_after_j / p.m) if e_after_j > 0.0 else 0.0
+
+                        if speed_after <= 0.0:
+                            p.v[:] = 0.0
+                        else:
+                            # Смешиваем старое направление со случайным (управляется scattering_strength).
+                            dir_old = p.v / speed
+                            angle = np.random.uniform(0.0, 2.0 * np.pi)
+                            dir_rand = np.array([np.cos(angle), np.sin(angle)], dtype=float)
+                            dir_mix = (1.0 - scattering_strength) * dir_old + scattering_strength * dir_rand
+                            mix_norm = float(np.hypot(dir_mix[0], dir_mix[1]))
+                            if mix_norm <= 1e-12:
+                                dir_mix = dir_rand
+                                mix_norm = 1.0
+                            p.v = speed_after * (dir_mix / mix_norm)
 
             p.r[0] += (p.v[0] * dt) * scale_si
             p.r[1] += (p.v[1] * dt) * scale_si

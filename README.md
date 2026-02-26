@@ -38,6 +38,7 @@ SoyuzOrbit
 - `BeamConfig.depth_m`: эффективная глубина 2D-модели для пересчета rho.
 - `BeamConfig.macro_charge_scale`: масштаб макрозаряда (усиление space-charge эффекта).
 - `BeamConfig.stats_random_seed`: seed для воспроизводимых графиков статистики.
+- `MediumConfig`: параметры окружающей среды (`vacuum` или `gas`).
 
 `simulation/grid.py`  
 Сетка симуляции и хранение полей:
@@ -96,6 +97,16 @@ SoyuzOrbit
 - Время и скорость считаются в СИ, но привязаны к масштабу сетки.
 - Глубина модели в 2D задается параметром `depth_m` (по умолчанию 1e-2 м).
 - Эффективный ток депонирования: `I_eff = total_current_a * macro_charge_scale`.
+
+Окружающая среда
+----------------
+- По умолчанию `mode="vacuum"`: поведение как раньше, без столкновений.
+- Для газа включите `mode="gas"` в `MediumConfig`:
+  - `pressure_pa`, `temperature_k`, `collision_cross_section_m2` задают частоту столкновений.
+  - `inelastic_energy_loss_ev` задает потерю энергии на столкновении.
+  - `scattering_strength` задает степень случайного изменения направления.
+  - `linear_drag_coeff_s` задает дополнительное вязкое торможение.
+- `relative_permittivity` влияет на уравнение Пуассона через `eps = eps0 * eps_r`.
 
 Как запускать
 ------------
