@@ -201,7 +201,7 @@ class MediumConfig:
     relative_permittivity: float = 1.0006
 
     # Параметры газа для mode="gas"
-    pressure_pa: float = 20.0
+    pressure_pa: float = 30
     temperature_k: float = 300.0
     collision_cross_section_m2: float = 2e-20
     inelastic_energy_loss_ev: float = 3.0
