@@ -74,7 +74,8 @@ class ParticleSystem:
 
         # Объем ячейки (в 2D считаем глубину 1 метр)
         h_m = res * self.cfg.physics.meters_per_unit
-        cell_volume = h_m * h_m * 1.0
+        depth_m = max(1e-9, float(getattr(self.cfg.beam, "depth_m", 1.0)))
+        cell_volume = h_m * h_m * depth_m
 
         for p in self.particles:
             if p.status != ParticleStatus.IN_FLIGHT: continue

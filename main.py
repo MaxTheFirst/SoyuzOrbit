@@ -103,6 +103,12 @@ def main():
         # 4. РЕЛАКСАЦИЯ: Смешиваем заряды, чтобы решение не осциллировало
         grid.rho = 0.1 * grid.rho + 0.9 * old_rho
 
+    # Важно: после последнего обновления rho нужно пересчитать потенциал/поле,
+    # иначе grid.potential/grid.ex/grid.ey могут соответствовать "предыдущему" rho.
+    solver.solve(grid, cfg.solver.max_iterations, cfg.solver.tolerance)
+    grid.calculate_field()
+
+
     # --- ПОСТ-ОБРАБОТКА ---
     print("Сбор финальной статистики...")
     analyzer = StatisticsAnalyzer(grid, cfg)
@@ -110,13 +116,15 @@ def main():
     stats = analyzer.calculate_full_stats(*spawn_closure())
     analyzer.plot_dashboard(stats)
 
-    # Финальная визуализация траекторий в установившемся поле
-    ps_final = ParticleSystem(cfg)
-    ps_final.spawn_particles_manual(*spawn_closure())
-    for _ in range(cfg.sim.total_steps):
-        ps_final.update(grid, total_current_a=target_current)
+    # Важно: используем ту же рабочую точку, что в stats,
+    # иначе визуализация может уйти в полную отсечку и "ничего не показать".
+    ps_final = stats["final_ps"]
+    viz_grid = stats.get("working_grid", grid)
 
-    viz = Visualizer(grid, ps_final)
+    hits_anode = sum(1 for p in ps_final.particles if p.status == ParticleStatus.HIT_ANODE)
+    print(f"Финальная визуализация: попаданий в анод {hits_anode}/{len(ps_final.particles)}")
+
+    viz = Visualizer(viz_grid, ps_final)
     viz.plot_field_and_trajectories()
 
 

@@ -3,6 +3,7 @@ import numpy as np
 
 class SimulationGrid:
     def __init__(self, config):
+        # config - это AppConfig, а config.grid - это GridConfig
         self.cfg = config.grid
 
         # 1. Потенциал (phi)
@@ -23,6 +24,16 @@ class SimulationGrid:
         self.rho = np.zeros((self.cfg.ny, self.cfg.nx))
 
         self.eps0 = self.cfg.eps0
+
+    @property
+    def height_mm(self):
+        """Прокси для доступа к высоте сетки из конфига"""
+        return self.cfg.height_mm
+
+    @property
+    def width_mm(self):
+        """Прокси для доступа к ширине сетки из конфига"""
+        return self.cfg.width_mm
 
     @property
     def components(self):
