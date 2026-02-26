@@ -70,6 +70,8 @@ class LayoutConfig:
     cathode_pos_x: float = 0.1
     cathode_width: float = 0.02
     cathode_height: float = 0.5
+    # Форма катода: "rectangle" (старое поведение) или "ellipse" (скругленный катод).
+    cathode_shape: str = "ellipse"
 
     anode_pos_x: float = 0.9
     anode_width: float = 0.05

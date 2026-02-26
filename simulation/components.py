@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class SimulationComponent:
     def __init__(self, name: str):
         self.name = name
@@ -31,6 +34,50 @@ class RectangleElectrode(SimulationComponent):
         grid_mask[y_start:y_end, x_start:x_end] = True
         if obj_id > 0:
             grid_struct[y_start:y_end, x_start:x_end] = obj_id
+
+
+class EllipseElectrode(SimulationComponent):
+    """
+    Эллиптический электрод внутри заданного прямоугольного bounding box.
+    Полезно для моделирования "скругленного" катода.
+    """
+    def __init__(self, name: str, voltage: float, x_range_mm: tuple, y_range_mm: tuple):
+        super().__init__(name)
+        self.voltage = voltage
+        self.x_mm = x_range_mm
+        self.y_mm = y_range_mm
+
+    def apply_to_grid(self, grid_potential, grid_mask, grid_struct, obj_id, resolution):
+        x_start = int(self.x_mm[0] / resolution)
+        x_end = int(self.x_mm[1] / resolution)
+        y_start = int(self.y_mm[0] / resolution)
+        y_end = int(self.y_mm[1] / resolution)
+
+        ny, nx = grid_potential.shape
+        x_start = max(0, min(x_start, nx))
+        x_end = max(0, min(x_end, nx))
+        y_start = max(0, min(y_start, ny))
+        y_end = max(0, min(y_end, ny))
+
+        if x_start >= x_end or y_start >= y_end:
+            return
+
+        cx = 0.5 * (x_start + x_end - 1)
+        cy = 0.5 * (y_start + y_end - 1)
+        rx = max(0.5, 0.5 * (x_end - x_start))
+        ry = max(0.5, 0.5 * (y_end - y_start))
+
+        yy, xx = np.ogrid[y_start:y_end, x_start:x_end]
+        ellipse_mask = (((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2) <= 1.0
+
+        region_phi = grid_potential[y_start:y_end, x_start:x_end]
+        region_fix = grid_mask[y_start:y_end, x_start:x_end]
+        region_phi[ellipse_mask] = self.voltage
+        region_fix[ellipse_mask] = True
+
+        if obj_id > 0:
+            region_struct = grid_struct[y_start:y_end, x_start:x_end]
+            region_struct[ellipse_mask] = obj_id
 
 
 class SplitGrid(SimulationComponent):

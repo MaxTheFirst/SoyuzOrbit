@@ -1,6 +1,6 @@
 from config import AppConfig, UserParams
 from simulation.grid import SimulationGrid
-from simulation.components import RectangleElectrode, SplitGrid
+from simulation.components import EllipseElectrode, RectangleElectrode, SplitGrid
 from simulation.solver import LaplaceSolver
 from simulation.particles import ParticleSystem, ParticleStatus
 from analysis.stats import StatisticsAnalyzer
@@ -32,7 +32,11 @@ def setup_scenario_dynamic(grid, cfg):
     grid_v = cathode_v + cfg.user.grid_voltage_bias
 
     c_x, c_y = get_rect_coords(layout.cathode_pos_x, layout.cathode_width, layout.cathode_height, w, h)
-    grid.add_component(RectangleElectrode("Cathode", cathode_v, c_x, c_y))
+    cathode_shape = str(getattr(layout, "cathode_shape", "rectangle")).strip().lower()
+    if cathode_shape == "ellipse":
+        grid.add_component(EllipseElectrode("Cathode", cathode_v, c_x, c_y))
+    else:
+        grid.add_component(RectangleElectrode("Cathode", cathode_v, c_x, c_y))
 
     g_x_pos = w * layout.grid_pos_x
     g_width = w * layout.grid_width
