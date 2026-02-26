@@ -15,7 +15,7 @@ class UserParams:
     grid_voltage_bias: float = -50.0  # Рабочая точка сетки (для одиночного запуска)
     
     # Настройки качества (ползунки)
-    resolution_quality: int = 100  # Кол-во ячеек по ширине (Grid density)
+    resolution_quality: int = 200  # Кол-во ячеек по ширине (Grid density)
     time_accuracy: float = 0.2  # Коэф. Куранта (меньше = точнее и медленнее). 0.1-0.5 ок.
     solver_precision: str = "High"  # Low, Medium, High
     max_stat_simulation_steps: int = 20
@@ -68,10 +68,12 @@ class GridConfig:
 class LayoutConfig:
     """Геометрия в процентах (0.0 - 1.0)"""
     cathode_pos_x: float = 0.1
-    cathode_width: float = 0.02
+    cathode_width: float = 0.08
     cathode_height: float = 0.5
-    # Форма катода: "rectangle" (старое поведение) или "ellipse" (скругленный катод).
-    cathode_shape: str = "ellipse"
+    # Форма катода: "rectangle", "ellipse" или "concave" (вогнутый к сетке).
+    cathode_shape: str = "rectangle"
+    # Глубина вогнутости для cathode_shape="concave" (0.0..0.95 от ширины катода).
+    cathode_concavity_ratio: float = 0.45
 
     anode_pos_x: float = 0.9
     anode_width: float = 0.05

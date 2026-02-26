@@ -27,7 +27,8 @@ SoyuzOrbit
 - `UserParams`: геометрия, напряжения, качество сетки и шага времени.
 - `UserParams.iv_sweep_type`: тип ВАХ (`grid` или `anode`).
 - `UserParams.iv_grid_min/max`: диапазон sweep для bias сетки относительно катода.
-- `LayoutConfig.cathode_shape`: форма катода (`rectangle` или `ellipse`).
+- `LayoutConfig.cathode_shape`: форма катода (`rectangle`, `ellipse`, `concave`).
+- `LayoutConfig.cathode_concavity_ratio`: глубина вогнутости для `concave`.
 - `GridConfig`: размеры, разрешение и количество узлов.
 - `SolverConfig`: параметры решателя и критерий сходимости.
 - `SimulationConfig`: шаг времени и оценка числа шагов.
@@ -50,6 +51,7 @@ SoyuzOrbit
 Геометрия электродов:
 - `RectangleElectrode`: прямоугольный электрод.
 - `EllipseElectrode`: эллиптический электрод (скругленный катод).
+- `ConcaveCathodeElectrode`: вогнутый катод (вогнутая эмиттирующая кромка).
 - `SplitGrid`: сетка с щелью в центре.
 
 `simulation/solver.py`  

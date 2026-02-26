@@ -46,15 +46,26 @@ class Visualizer:
         # 4. ОТРИСОВКА ЭЛЕКТРОДОВ (МАСКИ)
         # Накладываем маску там, где есть электроды
         structure_mask = np.where(self.grid.fixed_mask, 1, np.nan)
-        # ax.imshow(
-        #     structure_mask,
-        #     origin='lower',
-        #     extent=extent,
-        #     cmap='gray',
-        #     vmin=0, vmax=1,
-        #     alpha=0.6,
-        #     interpolation='nearest'  # Для твердых тел лучше без сглаживания
-        # )
+        ax.imshow(
+            structure_mask,
+            origin='lower',
+            extent=extent,
+            cmap='gray',
+            vmin=0, vmax=1,
+            alpha=0.18,
+            interpolation='nearest',  # Для твердых тел лучше без сглаживания
+        )
+
+        # Подсветка формы катода (чтобы различие rectangle/ellipse/concave было видно явно)
+        cathode_mask = (self.grid.structure_map == 1).astype(float)
+        ax.contour(
+            cathode_mask,
+            levels=[0.5],
+            origin='lower',
+            extent=extent,
+            colors='lime',
+            linewidths=1.2,
+        )
 
         # 5. ЛИНИИ ПОЛЯ (STREAMPLOT)
         # Генерируем сетку координат строго по конфигу
