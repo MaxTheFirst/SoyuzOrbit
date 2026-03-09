@@ -1,0 +1,99 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Battery",
+      "name": "BAT1",
+      "params": {
+        "capacity_mah": 550.0,
+        "chemistry": "alkaline",
+        "internal_resistance_ohm": 1.1,
+        "nominal_voltage_v": 9.0
+      },
+      "x": 200.0,
+      "y": 220.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Resistor",
+      "name": "R1",
+      "params": {
+        "resistance_ohm": 330.0,
+        "tolerance": 0.01
+      },
+      "x": 420.0,
+      "y": 220.0
+    },
+    {
+      "component_id": 3,
+      "kind": "LED",
+      "name": "LED1",
+      "params": {
+        "color": "red",
+        "max_forward_current_a": 0.02
+      },
+      "x": 650.0,
+      "y": 220.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "x": 650.0,
+      "y": 360.0
+    }
+  ],
+  "name": "LED JSON Demo",
+  "schema_version": 1,
+  "settings": {
+    "dt_s": 0.0001,
+    "duration_s": 0.03
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "wire_id": 4
+    }
+  ]
+}
