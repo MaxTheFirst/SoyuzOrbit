@@ -286,11 +286,17 @@ class CircuitProject:
                 continue
             terminal_count = len(COMPONENT_TERMINALS[component.kind])
             node_list = [pin_nodes[(component.component_id, terminal_index)] for terminal_index in range(terminal_count)]
-            instance = create_component(component.kind, component.name, node_list, **component.params)
+            component_params = dict(component.params)
+            layout_z_center_m = float(component_params.get("layout_z_center_m", 0.0))
+            layout_thickness_m = component_params.get("layout_thickness_m")
+            instance = create_component(component.kind, component.name, node_list, **component_params)
             instance.group_name = component.name
             instance.layout_position_px = (component.x, component.y)
             instance.layout_points_px = component.terminal_positions or [(component.x, component.y)]
             instance.layout_rotation_deg = component.rotation_deg
+            instance.layout_z_center_m = layout_z_center_m
+            if layout_thickness_m is not None:
+                instance.layout_thickness_m = max(float(layout_thickness_m), 1.0e-6)
             circuit.add(instance)
 
         wire_defaults = COMPONENT_LIBRARY[WIRE_KIND][1]
@@ -343,6 +349,9 @@ class CircuitProject:
                 segment.layout_position_px = ((start_point[0] + end_point[0]) * 0.5, (start_point[1] + end_point[1]) * 0.5)
                 segment.layout_points_px = [start_point, end_point]
                 segment.geometry_scale_m_per_px = meters_per_pixel
+                segment.layout_z_center_m = float(params.get("layout_z_center_m", 0.0))
+                if "layout_thickness_m" in params:
+                    segment.layout_thickness_m = max(float(params.get("layout_thickness_m", 0.00095)), 1.0e-6)
                 segment.electromagnetic_gain = float(params.get("coupling_gain", 1.0))
                 segment.permittivity_scale = float(params.get("permittivity_scale", 1.0))
                 segment.mutual_inductance_gain = float(params.get("mutual_inductance_gain", 1.0))

@@ -1516,6 +1516,8 @@ COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
             "mutual_inductance_gain": 1.0,
             "thermal_coupling_gain": 1.0,
             "contact_resistance_ohm": 0.0,
+            "layout_z_center_m": 0.0,
+            "layout_thickness_m": 0.00095,
         },
     ),
     "Diode": (
@@ -1591,6 +1593,11 @@ COMPONENT_TERMINALS: dict[str, tuple[str, ...]] = {
     "Junction": ("node",),
 }
 
+LAYOUT_PARAM_KEYS = {
+    "layout_z_center_m",
+    "layout_thickness_m",
+}
+
 
 def create_component(kind: str, name: str, nodes: list[str], **overrides: Any) -> Component:
     if kind in {"Ground", "Junction"}:
@@ -1598,6 +1605,8 @@ def create_component(kind: str, name: str, nodes: list[str], **overrides: Any) -
     cls, defaults = COMPONENT_LIBRARY[kind]
     params = defaults.copy()
     params.update(overrides)
+    for key in LAYOUT_PARAM_KEYS:
+        params.pop(key, None)
     if kind == "Wire":
         for key in (
             "auto_length_from_path",

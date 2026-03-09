@@ -61,6 +61,9 @@ FIELD_MATERIAL_DEFAULTS = {
     "width_px": 220.0,
     "height_px": 140.0,
     "rotation_deg": 0.0,
+    "z_center_m": -0.0012,
+    "thickness_m": 0.0016,
+    "layer_mode": "volume",
     "epsilon_r": 4.2,
     "sigma_s_per_m": 0.0,
     "mu_r": 1.0,
@@ -70,6 +73,8 @@ FIELD_PORT_DEFAULTS = {
     "width_px": 90.0,
     "height_px": 18.0,
     "rotation_deg": 0.0,
+    "z_center_m": 0.0,
+    "thickness_m": 0.0009,
     "source_kind": "voltage",
     "waveform": "sine",
     "amplitude_v": 5.0,
@@ -367,6 +372,7 @@ class MaterialRegionItem(QGraphicsRectItem):
         height = max(float(self.params.get("height_px", 140.0)), 18.0)
         self.setRect(-width / 2, -height / 2, width, height)
         self.setRotation(float(self.params.get("rotation_deg", 0.0)))
+        layer_mode = str(self.params.get("layer_mode", "volume")).lower()
         epsilon_r = max(float(self.params.get("epsilon_r", 1.0)), 1.0)
         sigma = max(float(self.params.get("sigma_s_per_m", 0.0)), 0.0)
         mu_r = max(float(self.params.get("mu_r", 1.0)), 0.1)
@@ -377,10 +383,14 @@ class MaterialRegionItem(QGraphicsRectItem):
             fill = QColor(90, 94, 99, min(210, alpha + 35))
         if mu_r > 1.5:
             fill = QColor(117, 76, 36, min(200, alpha + 18))
-        self.setPen(QPen(border, 2.0))
+        pen = QPen(border, 2.0, Qt.PenStyle.DashLine if layer_mode == "stack" else Qt.PenStyle.SolidLine)
+        self.setPen(pen)
         self.setBrush(QBrush(fill))
         text_color = QColor("#7c2d12") if self.isSelected() else QColor("#134e4a")
         self.label_item.setBrush(QBrush(text_color))
+        text_rect = self.label_item.boundingRect()
+        suffix = " [Layer]" if layer_mode == "stack" else ""
+        self.label_item.setText(f"{self.name}{suffix}")
         text_rect = self.label_item.boundingRect()
         self.label_item.setPos(-text_rect.width() / 2, -height / 2 - text_rect.height() - 6)
         self._sync_transform_handles()

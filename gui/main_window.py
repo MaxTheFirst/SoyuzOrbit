@@ -25,11 +25,12 @@ from PyQt6.QtWidgets import (
 )
 
 from core import COMPONENT_TERMINALS, load_project
-from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
+from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, simulate_full_wave_maxwell_3d, solve_quasi_static_field
 
 from .canvas import CircuitScene, CircuitView, ComponentItem, FieldPortItem, MaterialRegionItem, WireItem
 from .components_visual import build_qicon, default_params, default_visual_state, template_for
 from .field_dialog import FieldPreviewDialog
+from .volume_field_dialog import VolumeFieldPreviewDialog
 
 HIDDEN_USER_PARAMS = {"chemistry"}
 
@@ -74,6 +75,11 @@ PARAMETER_LABELS = {
     "length_m": "Длина, м",
     "width_px": "Ширина, px",
     "height_px": "Высота, px",
+    "z_center_m": "Центр по Z, м",
+    "thickness_m": "Толщина по Z, м",
+    "layout_z_center_m": "Положение по Z, м",
+    "layout_thickness_m": "Толщина проводника, м",
+    "layer_mode": "3D-режим материала",
     "area_mm2": "Сечение, мм²",
     "material": "Материал",
     "auto_length_from_path": "Длина из маршрута",
@@ -219,6 +225,7 @@ class MainWindow(QMainWindow):
         self.last_field_snapshot = None
         self.last_fdtd_sequence = None
         self.last_maxwell_sequence = None
+        self.last_maxwell_3d_sequence = None
 
         self.scene = CircuitScene(self)
         self.scene.selection_changed.connect(self._on_selection_changed)
@@ -372,6 +379,8 @@ class MainWindow(QMainWindow):
         maxwell_button.clicked.connect(self._show_maxwell_tmz_wave)
         maxwell_tez_button = QPushButton("Maxwell TEz")
         maxwell_tez_button.clicked.connect(self._show_maxwell_tez_wave)
+        maxwell_3d_button = QPushButton("Maxwell 3D")
+        maxwell_3d_button.clicked.connect(self._show_maxwell_3d_wave)
 
         layout.addWidget(wire_button, 2, 0)
         layout.addWidget(delete_button, 2, 1)
@@ -387,6 +396,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(fdtd_button, 8, 0, 1, 2)
         layout.addWidget(maxwell_button, 9, 0)
         layout.addWidget(maxwell_tez_button, 9, 1)
+        layout.addWidget(maxwell_3d_button, 10, 0, 1, 2)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -438,6 +448,15 @@ class MainWindow(QMainWindow):
         self.properties_form.addRow(QLabel("Выводы"), QLabel(translated_terminals))
         for key, value in component.params.items():
             if key in HIDDEN_USER_PARAMS:
+                continue
+            line = QLineEdit(str(value))
+            self.property_inputs[key] = line
+            self.properties_form.addRow(QLabel(PARAMETER_LABELS.get(key, key)), line)
+        for key, value in (
+            ("layout_z_center_m", component.params.get("layout_z_center_m", 0.0)),
+            ("layout_thickness_m", component.params.get("layout_thickness_m", 0.0016)),
+        ):
+            if key in self.property_inputs:
                 continue
             line = QLineEdit(str(value))
             self.property_inputs[key] = line
@@ -531,6 +550,9 @@ class MainWindow(QMainWindow):
                 base = {
                     "width_px": 220.0,
                     "height_px": 140.0,
+                    "z_center_m": -0.0012,
+                    "thickness_m": 0.0016,
+                    "layer_mode": "volume",
                     "epsilon_r": 4.2,
                     "sigma_s_per_m": 0.0,
                     "mu_r": 1.0,
@@ -549,6 +571,8 @@ class MainWindow(QMainWindow):
                     "width_px": 90.0,
                     "height_px": 18.0,
                     "rotation_deg": 0.0,
+                    "z_center_m": 0.0,
+                    "thickness_m": 0.0009,
                     "source_kind": "voltage",
                     "waveform": "sine",
                     "amplitude_v": 5.0,
@@ -569,6 +593,8 @@ class MainWindow(QMainWindow):
             if self.rotation_input is not None:
                 self.current_selected.apply_rotation(float(self.rotation_input.text()))
             base = default_params(self.current_selected.kind)
+            base.setdefault("layout_z_center_m", 0.0)
+            base.setdefault("layout_thickness_m", 0.0016)
             updated = {}
             for key, widget in self.property_inputs.items():
                 updated[key] = self._coerce_value(widget.text(), base.get(key, self.current_selected.params.get(key, "")))
@@ -645,6 +671,7 @@ class MainWindow(QMainWindow):
             self.last_field_snapshot = None
             self.last_fdtd_sequence = None
             self.last_maxwell_sequence = None
+            self.last_maxwell_3d_sequence = None
             self.scene.play_result(result)
             self._sync_animation_button()
             self._write_log(result)
@@ -715,6 +742,22 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Maxwell TEz рассчитан.")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка Maxwell TEz", str(exc))
+
+    def _show_maxwell_3d_wave(self) -> None:
+        try:
+            duration, dt = self._parse_simulation_settings()
+            project = self.scene.build_project("Схема на холсте", duration, dt)
+            self.last_circuit = project.to_circuit()
+            self.last_result = self.last_circuit.simulate(duration, dt)
+            self.scene.play_result(self.last_result)
+            self._sync_animation_button()
+            self._write_log(self.last_result)
+            self.last_maxwell_3d_sequence = simulate_full_wave_maxwell_3d(self.last_circuit, self.last_result)
+            dialog = VolumeFieldPreviewDialog(self.last_maxwell_3d_sequence, self)
+            dialog.exec()
+            self.statusBar().showMessage("Maxwell 3D рассчитан.")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка Maxwell 3D", str(exc))
 
     def _write_log(self, result) -> None:
         lines = [f"Схема: {result.metadata['name']}", f"Длительность: {result.metadata['duration_s']:.6f} с", "", "Узлы:"]

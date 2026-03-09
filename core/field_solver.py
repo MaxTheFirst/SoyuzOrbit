@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from .component import Component, TwoTerminalComponent
 from .engine import Circuit, GROUND_NAMES, SimulationResult
@@ -123,6 +123,120 @@ class FieldWaveSequence:
 
 
 @dataclass(slots=True)
+class FieldVolumeSequence:
+    bounds_px: tuple[float, float, float, float]
+    z_bounds_m: tuple[float, float]
+    x_coords_px: np.ndarray
+    y_coords_px: np.ndarray
+    z_coords_m: np.ndarray
+    potential_v: np.ndarray
+    electric_frames_v_m: np.ndarray
+    magnetic_frames_t: np.ndarray
+    conductor_mask: np.ndarray
+    metadata: dict[str, Any]
+
+    def frame_count(self) -> int:
+        return int(self.electric_frames_v_m.shape[0])
+
+    def slice_count(self, plane: str) -> int:
+        canonical = _canonical_plane_name(plane)
+        if canonical == "xy":
+            return int(self.potential_v.shape[0])
+        if canonical == "xz":
+            return int(self.potential_v.shape[1])
+        return int(self.potential_v.shape[2])
+
+    def layer_frame(self, name: str, frame_index: int) -> np.ndarray:
+        index = max(0, min(self.frame_count() - 1, int(frame_index)))
+        canonical = _canonical_layer_name(name)
+        if canonical == "potential":
+            return self.potential_v
+        if canonical == "electric":
+            return self.electric_frames_v_m[index]
+        if canonical == "magnetic":
+            return self.magnetic_frames_t[index]
+        raise ValueError(f"Unknown field layer: {name}")
+
+    def slice_to_image(
+        self,
+        layer: str = "electric",
+        *,
+        plane: str = "xy",
+        frame_index: int = 0,
+        slice_index: int | None = None,
+        scale: int = 3,
+    ) -> Image.Image:
+        canonical_layer = _canonical_layer_name(layer)
+        canonical_plane = _canonical_plane_name(plane)
+        volume = np.array(self.layer_frame(layer, frame_index), dtype=float)
+        conductor_volume = np.array(self.conductor_mask, dtype=bool)
+        values_2d, conductor_mask_2d = _volume_slice(
+            volume,
+            conductor_volume,
+            plane=canonical_plane,
+            slice_index=self._slice_index(canonical_plane, slice_index),
+        )
+        return _layer_to_image(
+            values_2d,
+            conductor_mask_2d,
+            layer=canonical_layer,
+            scale=scale,
+            scale_ref=self._display_scale(canonical_layer),
+            noise_floor=self._noise_floor(canonical_layer),
+        )
+
+    def isosurface_to_image(
+        self,
+        layer: str = "electric",
+        *,
+        frame_index: int = 0,
+        iso_ratio: float = 0.58,
+        scale: int = 3,
+    ) -> Image.Image:
+        canonical_layer = _canonical_layer_name(layer)
+        volume = np.array(self.layer_frame(layer, frame_index), dtype=float)
+        return _volume_isosurface_to_image(
+            volume,
+            self.conductor_mask,
+            layer=canonical_layer,
+            scale=scale,
+            scale_ref=self._display_scale(canonical_layer),
+            noise_floor=self._noise_floor(canonical_layer),
+            iso_ratio=iso_ratio,
+        )
+
+    def _slice_index(self, plane: str, slice_index: int | None) -> int:
+        count = self.slice_count(plane)
+        if slice_index is None:
+            return count // 2
+        return max(0, min(count - 1, int(slice_index)))
+
+    def _display_scale(self, layer: str) -> float:
+        key = f"render_scale_{layer}"
+        if key not in self.metadata:
+            if layer == "potential":
+                values = self.potential_v
+            elif layer == "electric":
+                values = self.electric_frames_v_m
+            else:
+                values = self.magnetic_frames_t
+            self.metadata[key] = _estimate_display_scale(values, layer)
+        return float(self.metadata[key])
+
+    def _noise_floor(self, layer: str) -> float:
+        if layer == "potential":
+            return 0.0
+        key = f"render_noise_floor_{layer}"
+        if key not in self.metadata:
+            if layer == "electric":
+                values = self.electric_frames_v_m
+            else:
+                values = self.magnetic_frames_t
+            self.metadata[key] = _estimate_noise_floor(values, layer, self._display_scale(layer))
+        return float(self.metadata[key])
+
+
+@dataclass(slots=True)
 class _FieldContext:
     snapshot: FieldSnapshot
     epsilon_r: np.ndarray
@@ -147,6 +261,17 @@ def _canonical_layer_name(name: str) -> str:
     if lowered in {"magnetic", "b"}:
         return "magnetic"
     raise ValueError(f"Unknown field layer: {name}")
+
+
+def _canonical_plane_name(name: str) -> str:
+    lowered = str(name).lower()
+    if lowered in {"xy", "top"}:
+        return "xy"
+    if lowered in {"xz", "front"}:
+        return "xz"
+    if lowered in {"yz", "side"}:
+        return "yz"
+    raise ValueError(f"Unknown volume plane: {name}")
 
 
 def _estimate_display_scale(values: np.ndarray, layer: str) -> float:
@@ -196,6 +321,139 @@ def _low_pass_field(values: np.ndarray, conductor_mask: np.ndarray | None = None
     return result
 
 
+def _low_pass_volume(values: np.ndarray, frozen_mask: np.ndarray | None = None, *, strength: float = 0.12, passes: int = 1) -> np.ndarray:
+    if strength <= 0.0 or passes <= 0:
+        return np.array(values, dtype=float, copy=True)
+    result = np.array(values, dtype=float, copy=True)
+    if result.ndim != 3 or min(result.shape) < 3:
+        return result
+    if frozen_mask is None:
+        frozen_mask = np.zeros(result.shape, dtype=bool)
+    frozen = frozen_mask.astype(bool)
+    for _ in range(passes):
+        updated = result.copy()
+        interior = result[1:-1, 1:-1, 1:-1]
+        neighbours = (
+            result[:-2, 1:-1, 1:-1]
+            + result[2:, 1:-1, 1:-1]
+            + result[1:-1, :-2, 1:-1]
+            + result[1:-1, 2:, 1:-1]
+            + result[1:-1, 1:-1, :-2]
+            + result[1:-1, 1:-1, 2:]
+        ) / 6.0
+        updated[1:-1, 1:-1, 1:-1] = (1.0 - strength) * interior + strength * neighbours
+        if np.any(frozen):
+            updated[frozen] = result[frozen]
+        result = updated
+    return result
+
+
+def _volume_slice(
+    values: np.ndarray,
+    conductor_mask: np.ndarray,
+    *,
+    plane: str,
+    slice_index: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if plane == "xy":
+        index = max(0, min(values.shape[0] - 1, slice_index))
+        return values[index, :, :], conductor_mask[index, :, :]
+    if plane == "xz":
+        index = max(0, min(values.shape[1] - 1, slice_index))
+        return values[:, index, :], conductor_mask[:, index, :]
+    index = max(0, min(values.shape[2] - 1, slice_index))
+    return values[:, :, index], conductor_mask[:, :, index]
+
+
+def _volume_isosurface_to_image(
+    values: np.ndarray,
+    conductor_mask: np.ndarray,
+    *,
+    layer: str,
+    scale: int,
+    scale_ref: float,
+    noise_floor: float,
+    iso_ratio: float,
+) -> Image.Image:
+    if values.ndim != 3:
+        raise ValueError("Isosurface rendering expects a 3D volume.")
+    display_values = _low_pass_volume(values, conductor_mask, strength=0.14, passes=2)
+    threshold = noise_floor + max(scale_ref - noise_floor, 1.0e-18) * min(max(iso_ratio, 0.05), 0.98)
+    active = display_values >= threshold
+    conductor = conductor_mask.astype(bool)
+    occupied = active | conductor
+    if not np.any(occupied):
+        empty = Image.new("RGB", (320, 220), (10, 21, 33))
+        return empty.resize((empty.width * max(scale, 1), empty.height * max(scale, 1)), Image.Resampling.BICUBIC)
+
+    depth, height, width = occupied.shape
+    tile_w = 8
+    tile_h = 4
+    z_step = 6
+    canvas_w = int((width + height) * tile_w + 80)
+    canvas_h = int((width + height) * tile_h + depth * z_step + 80)
+    image = Image.new("RGB", (canvas_w, canvas_h), (10, 21, 33))
+    draw = ImageDraw.Draw(image, "RGBA")
+    center_x = canvas_w // 2
+    base_y = canvas_h - 36
+    normalized_scale = max(scale_ref - noise_floor, 1.0e-18)
+
+    def project(x: int, y: int, z: int) -> tuple[float, float]:
+        screen_x = center_x + (x - y) * tile_w
+        screen_y = base_y - (x + y) * tile_h - z * z_step
+        return float(screen_x), float(screen_y)
+
+    for depth_key in range(width + height + depth):
+        for z in range(depth):
+            for y in range(height):
+                x = depth_key - y - z
+                if x < 0 or x >= width or not occupied[z, y, x]:
+                    continue
+                if not conductor[z, y, x]:
+                    if (
+                        x > 0
+                        and x < width - 1
+                        and y > 0
+                        and y < height - 1
+                        and z > 0
+                        and z < depth - 1
+                        and occupied[z, y, x - 1]
+                        and occupied[z, y, x + 1]
+                        and occupied[z, y - 1, x]
+                        and occupied[z, y + 1, x]
+                        and occupied[z - 1, y, x]
+                        and occupied[z + 1, y, x]
+                    ):
+                        continue
+                px, py = project(x, y, z)
+                if conductor[z, y, x]:
+                    top = (242, 239, 233, 255)
+                    left = (218, 214, 208, 255)
+                    right = (204, 200, 196, 255)
+                else:
+                    value = max(display_values[z, y, x] - noise_floor, 0.0)
+                    intensity = min(max(value / normalized_scale, 0.0), 1.0)
+                    rgb = tuple(int(channel) for channel in _gradient_map(np.array([[intensity]], dtype=float), _layer_stops(layer))[0, 0])
+                    top = (rgb[0], rgb[1], rgb[2], 228)
+                    left = (max(int(rgb[0] * 0.72), 0), max(int(rgb[1] * 0.72), 0), max(int(rgb[2] * 0.72), 0), 210)
+                    right = (max(int(rgb[0] * 0.56), 0), max(int(rgb[1] * 0.56), 0), max(int(rgb[2] * 0.56), 0), 210)
+                draw.polygon([(px, py - z_step), (px + tile_w, py - tile_h - z_step), (px, py - 2 * tile_h - z_step), (px - tile_w, py - tile_h - z_step)], fill=top)
+                draw.polygon([(px - tile_w, py - tile_h - z_step), (px, py), (px, py - 2 * tile_h), (px, py - 2 * tile_h - z_step)], fill=left)
+                draw.polygon([(px + tile_w, py - tile_h - z_step), (px, py), (px, py - 2 * tile_h), (px, py - 2 * tile_h - z_step)], fill=right)
+
+    if scale > 1:
+        image = image.resize((image.width * scale, image.height * scale), Image.Resampling.BICUBIC)
+    return image
+
+
+def _layer_stops(layer: str) -> tuple[tuple[float, tuple[int, int, int]], ...]:
+    if layer == "potential":
+        return ((0.0, (18, 58, 94)), (0.5, (245, 242, 232)), (1.0, (164, 28, 47)))
+    if layer in {"electric", "e"}:
+        return ((0.0, (11, 30, 53)), (0.45, (43, 108, 176)), (1.0, (250, 204, 21)))
+    return ((0.0, (18, 18, 18)), (0.45, (153, 27, 27)), (1.0, (251, 191, 36)))
+
+
 def _layer_to_image(
     values: np.ndarray,
     conductor_mask: np.ndarray,
@@ -214,17 +472,17 @@ def _layer_to_image(
     if layer == "potential":
         span = max(float(scale_ref if scale_ref is not None else np.percentile(np.abs(finite), 96)), 1.0e-9)
         normalized = np.clip(0.5 + 0.5 * display_values / span, 0.0, 1.0)
-        image = _gradient_map(normalized, ((0.0, (18, 58, 94)), (0.5, (245, 242, 232)), (1.0, (164, 28, 47))))
+        image = _gradient_map(normalized, _layer_stops(layer))
     elif layer in {"electric", "e"}:
         span = max(float(scale_ref if scale_ref is not None else np.percentile(finite, 97)), 1.0e-9)
         visible = np.maximum(display_values - noise_floor, 0.0)
         normalized = np.clip(np.log1p(visible / max(span - noise_floor, 1.0e-18) * 4.0) / math.log1p(4.0), 0.0, 1.0)
-        image = _gradient_map(normalized, ((0.0, (11, 30, 53)), (0.45, (43, 108, 176)), (1.0, (250, 204, 21))))
+        image = _gradient_map(normalized, _layer_stops(layer))
     else:
         span = max(float(scale_ref if scale_ref is not None else np.percentile(finite, 97)), 1.0e-12)
         visible = np.maximum(display_values - noise_floor, 0.0)
         normalized = np.clip(np.log1p(visible / max(span - noise_floor, 1.0e-18) * 5.0) / math.log1p(5.0), 0.0, 1.0)
-        image = _gradient_map(normalized, ((0.0, (18, 18, 18)), (0.45, (153, 27, 27)), (1.0, (251, 191, 36))))
+        image = _gradient_map(normalized, _layer_stops(layer))
 
     pil = Image.fromarray(image, mode="RGB")
     if scale > 1:
@@ -339,6 +597,9 @@ def _extract_material_regions(circuit: Circuit) -> list[dict[str, Any]]:
                 "width_px": max(float(raw.get("width_px", 220.0)), 2.0),
                 "height_px": max(float(raw.get("height_px", 140.0)), 2.0),
                 "rotation_deg": float(raw.get("rotation_deg", 0.0)),
+                "z_center_m": float(raw.get("z_center_m", -0.0012)),
+                "thickness_m": max(float(raw.get("thickness_m", 0.0016)), 1.0e-6),
+                "layer_mode": str(raw.get("layer_mode", "volume")).lower(),
                 "epsilon_r": max(float(raw.get("epsilon_r", 1.0)), 1.0),
                 "sigma_s_per_m": max(float(raw.get("sigma_s_per_m", 0.0)), 0.0),
                 "mu_r": max(float(raw.get("mu_r", 1.0)), 1.0e-3),
@@ -384,6 +645,8 @@ def _source_component_port(component: Component, result: SimulationResult) -> di
             "height_px": 18.0,
             "rotation_deg": rotation_deg,
             "origin": "auto:PulseGenerator",
+            "z_center_m": _component_layout_z_center_m(component),
+            "thickness_m": max(_component_layout_thickness_m(component), 5.0e-4),
             "source_kind": "voltage",
             "waveform": "pulse",
             "amplitude_v": max(abs(high_level_v - low_level_v), 1.0e-9),
@@ -408,6 +671,8 @@ def _source_component_port(component: Component, result: SimulationResult) -> di
         "height_px": 16.0,
         "rotation_deg": rotation_deg,
         "origin": f"auto:{class_name}",
+        "z_center_m": _component_layout_z_center_m(component),
+        "thickness_m": max(_component_layout_thickness_m(component), 5.0e-4),
         "source_kind": "voltage",
         "waveform": waveform,
         "amplitude_v": amplitude_v,
@@ -428,6 +693,8 @@ def _extract_ports(circuit: Circuit, result: SimulationResult) -> list[dict[str,
                 "width_px": max(float(raw.get("width_px", 90.0)), 4.0),
                 "height_px": max(float(raw.get("height_px", 18.0)), 4.0),
                 "rotation_deg": float(raw.get("rotation_deg", 0.0)),
+                "z_center_m": float(raw.get("z_center_m", 0.0)),
+                "thickness_m": max(float(raw.get("thickness_m", 0.0009)), 1.0e-6),
                 "source_kind": str(raw.get("source_kind", "voltage")).lower(),
                 "waveform": str(raw.get("waveform", "sine")).lower(),
                 "amplitude_v": float(raw.get("amplitude_v", 5.0)),
@@ -771,6 +1038,211 @@ def _field_mode_note(context: _FieldContext, total_time_s: float) -> str | None:
     return None
 
 
+def _equivalent_diameter_m(area_mm2: float) -> float:
+    area_m2 = max(area_mm2, 1.0e-9) * 1.0e-6
+    return 2.0 * math.sqrt(area_m2 / math.pi)
+
+
+def _component_layout_z_center_m(component: Component) -> float:
+    return float(getattr(component, "layout_z_center_m", 0.0))
+
+
+def _component_layout_thickness_m(component: Component) -> float:
+    explicit = getattr(component, "layout_thickness_m", None)
+    if explicit is not None:
+        return max(float(explicit), 1.0e-6)
+    class_name = component.__class__.__name__
+    if class_name == "PhysiWire":
+        return max(_equivalent_diameter_m(float(getattr(component, "area_mm2", 0.75))) * 1.25, 2.5e-4)
+    if class_name in {"LED_ImageActive", "SchockleyDiode", "RealFuse", "ToggleSwitch", "Ammeter", "Voltmeter"}:
+        return 0.0018
+    if class_name in {"RealResistor", "Thermistor", "Photoresistor", "RealCapacitor", "RealInductor", "PulseGenerator", "RealACGenerator"}:
+        return 0.0022
+    if class_name == "PhysiBattery":
+        return 0.010
+    if class_name == "MOSFET_Model":
+        return 0.0025
+    if class_name == "PhysiOpAmp":
+        return 0.0032
+    if class_name == "IncandescentBulb":
+        return 0.0045
+    return 0.002
+
+
+def _z_index_window(z_coords_m: np.ndarray, center_m: float, thickness_m: float) -> tuple[int, int]:
+    half = 0.5 * max(thickness_m, 1.0e-6)
+    lower = center_m - half
+    upper = center_m + half
+    start = int(np.searchsorted(z_coords_m, lower, side="left"))
+    end = int(np.searchsorted(z_coords_m, upper, side="right"))
+    start = max(0, min(len(z_coords_m) - 1, start))
+    end = max(start + 1, min(len(z_coords_m), end))
+    return start, end
+
+
+def _z_mask(z_coords_m: np.ndarray, center_m: float, thickness_m: float) -> np.ndarray:
+    start, end = _z_index_window(z_coords_m, center_m, thickness_m)
+    mask = np.zeros(len(z_coords_m), dtype=bool)
+    mask[start:end] = True
+    return mask
+
+
+def _map_point_to_grid_indices(
+    point: tuple[float, float],
+    bounds_px: tuple[float, float, float, float],
+    nx: int,
+    ny: int,
+) -> tuple[int, int]:
+    min_x, min_y, max_x, max_y = bounds_px
+    x_index = int(round((point[0] - min_x) / max(max_x - min_x, 1.0e-9) * (nx - 1)))
+    y_index = int(round((point[1] - min_y) / max(max_y - min_y, 1.0e-9) * (ny - 1)))
+    return max(0, min(nx - 1, x_index)), max(0, min(ny - 1, y_index))
+
+
+def _mark_disc_3d(mask: np.ndarray, x_index: int, y_index: int, z_slice: slice, radius_cells: int) -> None:
+    depth, height, width = mask.shape
+    x0 = max(0, x_index - radius_cells)
+    x1 = min(width, x_index + radius_cells + 1)
+    y0 = max(0, y_index - radius_cells)
+    y1 = min(height, y_index + radius_cells + 1)
+    z0 = max(0, z_slice.start if z_slice.start is not None else 0)
+    z1 = min(depth, z_slice.stop if z_slice.stop is not None else depth)
+    yy, xx = np.ogrid[y0:y1, x0:x1]
+    local_mask = (xx - x_index) ** 2 + (yy - y_index) ** 2 <= radius_cells * radius_cells
+    mask[z0:z1, y0:y1, x0:x1][:, local_mask] = True
+
+
+def _build_material_maps_3d(
+    circuit: Circuit,
+    context: _FieldContext,
+    x_coords_px: np.ndarray,
+    y_coords_px: np.ndarray,
+    z_coords_m: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]:
+    nz = len(z_coords_m)
+    ny = len(y_coords_px)
+    nx = len(x_coords_px)
+    xx_px, yy_px = np.meshgrid(x_coords_px, y_coords_px)
+    epsilon_3d = np.ones((nz, ny, nx), dtype=float)
+    sigma_3d = np.zeros((nz, ny, nx), dtype=float)
+    mu_3d = np.ones((nz, ny, nx), dtype=float)
+    materials = _extract_material_regions(circuit)
+    for region in materials:
+        layer_mode = str(region.get("layer_mode", "volume")).lower()
+        if layer_mode == "stack":
+            xy_mask = np.ones((ny, nx), dtype=bool)
+        else:
+            xy_mask = _rect_mask(
+                xx_px,
+                yy_px,
+                region["center_px"],
+                region["width_px"],
+                region["height_px"],
+                region["rotation_deg"],
+            )
+        z_mask = _z_mask(z_coords_m, float(region.get("z_center_m", -0.0012)), float(region.get("thickness_m", 0.0016)))
+        for z_index, enabled in enumerate(z_mask):
+            if not enabled:
+                continue
+            epsilon_3d[z_index][xy_mask] = float(region["epsilon_r"])
+            sigma_3d[z_index][xy_mask] = float(region["sigma_s_per_m"])
+            mu_3d[z_index][xy_mask] = float(region["mu_r"])
+    return epsilon_3d, sigma_3d, mu_3d, materials
+
+
+def _build_conductor_mask_3d(
+    circuit: Circuit,
+    context: _FieldContext,
+    z_coords_m: np.ndarray,
+    bounds_px: tuple[float, float, float, float],
+    nx: int,
+    ny: int,
+) -> np.ndarray:
+    mask = np.zeros((len(z_coords_m), ny, nx), dtype=bool)
+    px_per_cell_x = max((bounds_px[2] - bounds_px[0]) / max(nx - 1, 1), 1.0e-9)
+    for component in circuit.components:
+        layout_points = [(float(point[0]), float(point[1])) for point in getattr(component, "layout_points_px", [])]
+        if not layout_points:
+            position = getattr(component, "layout_position_px", None)
+            if position is not None:
+                layout_points = [(float(position[0]), float(position[1]))]
+        if not layout_points:
+            continue
+        z_center = _component_layout_z_center_m(component)
+        thickness_m = _component_layout_thickness_m(component)
+        z_start, z_end = _z_index_window(z_coords_m, z_center, thickness_m)
+        radius_px = max(0.5 * thickness_m / max(context.scale_m_per_px, 1.0e-12), 3.0)
+        radius_cells = max(1, int(round(radius_px / px_per_cell_x)))
+        if isinstance(component, TwoTerminalComponent) and len(layout_points) >= 2:
+            polyline = layout_points
+        else:
+            polyline = layout_points
+        if len(polyline) == 1:
+            ix, iy = _map_point_to_grid_indices(polyline[0], bounds_px, nx, ny)
+            _mark_disc_3d(mask, ix, iy, slice(z_start, z_end), radius_cells)
+            continue
+        sampled: list[tuple[float, float]] = []
+        for index in range(len(polyline) - 1):
+            start = polyline[index]
+            end = polyline[index + 1]
+            count = max(1, int(round(math.hypot(end[0] - start[0], end[1] - start[1]) / 8.0)))
+            sampled.extend((x, y) for x, y, _ in _sample_segment(start, end, count))
+        sampled.append(polyline[-1])
+        for point in sampled:
+            ix, iy = _map_point_to_grid_indices(point, bounds_px, nx, ny)
+            _mark_disc_3d(mask, ix, iy, slice(z_start, z_end), radius_cells)
+    return mask
+
+
+def _build_port_masks_3d(
+    ports: list[dict[str, Any]],
+    x_coords_px: np.ndarray,
+    y_coords_px: np.ndarray,
+    z_coords_m: np.ndarray,
+) -> tuple[list[dict[str, Any]], np.ndarray]:
+    nz = len(z_coords_m)
+    ny = len(y_coords_px)
+    nx = len(x_coords_px)
+    xx_px, yy_px = np.meshgrid(x_coords_px, y_coords_px)
+    port_mask_3d = np.zeros((nz, ny, nx), dtype=bool)
+    entries: list[dict[str, Any]] = []
+    for port in ports:
+        xy_mask = _rect_mask(
+            xx_px,
+            yy_px,
+            port["center_px"],
+            port["width_px"],
+            port["height_px"],
+            port["rotation_deg"],
+        )
+        z_mask = _z_mask(z_coords_m, float(port.get("z_center_m", 0.0)), float(port.get("thickness_m", 0.0009)))
+        mask_3d = np.zeros((nz, ny, nx), dtype=bool)
+        for z_index, enabled in enumerate(z_mask):
+            if enabled:
+                mask_3d[z_index][xy_mask] = True
+        if not np.any(mask_3d):
+            continue
+        entry = dict(port)
+        entry["mask_3d"] = mask_3d
+        entries.append(entry)
+        port_mask_3d |= mask_3d
+    return entries, port_mask_3d
+
+
+def _central_diff_axis(values: np.ndarray, spacing: float, axis: int) -> np.ndarray:
+    result = np.zeros_like(values, dtype=float)
+    if values.shape[axis] < 3:
+        return result
+    source = [slice(None)] * values.ndim
+    left = [slice(None)] * values.ndim
+    right = [slice(None)] * values.ndim
+    source[axis] = slice(1, -1)
+    left[axis] = slice(0, -2)
+    right[axis] = slice(2, None)
+    result[tuple(source)] = (values[tuple(right)] - values[tuple(left)]) / max(2.0 * spacing, 1.0e-18)
+    return result
+
+
 def simulate_fdtd_wave(
     circuit: Circuit,
     result: SimulationResult,
@@ -1095,3 +1567,206 @@ def simulate_full_wave_maxwell_2d_tez(
     **kwargs: Any,
 ) -> FieldWaveSequence:
     return simulate_full_wave_maxwell_2d(circuit, result, mode="tez", **kwargs)
+
+
+def simulate_full_wave_maxwell_3d(
+    circuit: Circuit,
+    result: SimulationResult,
+    *,
+    grid_width: int = 108,
+    grid_height: int = 84,
+    grid_depth: int = 17,
+    steps: int = 40,
+    padding_px: float = 90.0,
+    iterations: int = 420,
+    edge_absorber_cells: int = 6,
+    conductor_thickness_cells: int = 2,
+) -> FieldVolumeSequence:
+    del conductor_thickness_cells
+    context = _build_field_context(
+        circuit,
+        result,
+        grid_width=grid_width,
+        grid_height=grid_height,
+        padding_px=padding_px,
+        iterations=iterations,
+    )
+    static = context.snapshot
+    ny, nx = static.potential_v.shape
+    nz = max(int(grid_depth), 7)
+    x_extent_m = max((static.bounds_px[2] - static.bounds_px[0]) * context.scale_m_per_px, context.dx_m)
+    y_extent_m = max((static.bounds_px[3] - static.bounds_px[1]) * context.scale_m_per_px, context.dy_m)
+    z_extent_m = max(min(x_extent_m, y_extent_m) * 0.42, 12.0 * min(context.dx_m, context.dy_m))
+    z_min_m = -0.5 * z_extent_m
+    z_max_m = 0.5 * z_extent_m
+    z_coords_m = np.linspace(z_min_m, z_max_m, nz, dtype=float)
+    dz_m = max((z_max_m - z_min_m) / max(nz - 1, 1), 1.0e-9)
+
+    x_coords_px = static.x_grid_px[0, :].copy()
+    y_coords_px = static.y_grid_px[:, 0].copy()
+    epsilon_3d, sigma_3d, mu_3d, materials = _build_material_maps_3d(circuit, context, x_coords_px, y_coords_px, z_coords_m)
+    conductor_mask_3d = _build_conductor_mask_3d(circuit, context, z_coords_m, static.bounds_px, nx, ny)
+    port_entries, port_mask_3d = _build_port_masks_3d(context.ports, x_coords_px, y_coords_px, z_coords_m)
+    conductor_mask_3d &= ~port_mask_3d
+
+    potential_volume = np.zeros((nz, ny, nx), dtype=float)
+    material_weight = np.clip(np.sqrt(epsilon_3d / np.maximum(mu_3d, 1.0e-9)), 0.4, 3.0)
+    for z_index, z_coord in enumerate(z_coords_m):
+        surface_weight = 0.0
+        if np.any(conductor_mask_3d[z_index]):
+            surface_weight = 1.0
+        else:
+            distance_to_plane = min(abs(z_coord - _component_layout_z_center_m(component)) for component in circuit.components) if circuit.components else abs(z_coord)
+            surface_weight = math.exp(-distance_to_plane / max(0.18 * z_extent_m, 1.0e-9))
+        potential_volume[z_index] = static.potential_v * surface_weight / material_weight[z_index]
+        if np.any(conductor_mask_3d[z_index]):
+            potential_volume[z_index][conductor_mask_3d[z_index]] = static.potential_v[conductor_mask_3d[z_index]]
+
+    c0 = 1.0 / math.sqrt(EPSILON_0 * MU_0)
+    max_phase_velocity = c0 / math.sqrt(max(float(np.min(epsilon_3d * mu_3d)), 1.0e-9))
+    dt_s = 0.16 / (max_phase_velocity * math.sqrt((1.0 / context.dx_m ** 2) + (1.0 / context.dy_m ** 2) + (1.0 / dz_m ** 2)))
+    note = _field_mode_note(context, dt_s * steps)
+    layer_count = sum(1 for region in materials if str(region.get("layer_mode", "volume")).lower() == "stack")
+    extrude_note = (
+        "3D-объем из 2D сцены: учтены толщина проводников, порты и материальные слои по Z."
+        if layer_count
+        else "3D-объем из 2D сцены: учтены толщина проводников и портов по Z."
+    )
+    if note:
+        note = f"{note} {extrude_note}"
+    else:
+        note = extrude_note
+
+    ex = np.zeros((nz, ny, nx), dtype=float)
+    ey = np.zeros((nz, ny, nx), dtype=float)
+    ez = np.zeros((nz, ny, nx), dtype=float)
+    hx = np.zeros((nz, ny, nx), dtype=float)
+    hy = np.zeros((nz, ny, nx), dtype=float)
+    hz = np.zeros((nz, ny, nx), dtype=float)
+    electric_frames = np.zeros((steps, nz, ny, nx), dtype=float)
+    magnetic_frames = np.zeros((steps, nz, ny, nx), dtype=float)
+
+    absorber_cells = max(edge_absorber_cells, 3)
+    sigma_absorb = np.zeros((nz, ny, nx), dtype=float)
+    sigma_max = 0.75 * EPSILON_0 / max(dt_s, 1.0e-18)
+    for z in range(nz):
+        for y in range(ny):
+            for x in range(nx):
+                dist = min(x, nx - 1 - x, y, ny - 1 - y, z, nz - 1 - z)
+                if dist < absorber_cells:
+                    ratio = (absorber_cells - dist) / absorber_cells
+                    sigma_absorb[z, y, x] = sigma_max * ratio * ratio
+
+    eps = EPSILON_0 * epsilon_3d
+    mu = MU_0 * mu_3d
+    sigma_e = sigma_3d + sigma_absorb
+    sigma_h = sigma_absorb
+    decay_e = (1.0 - sigma_e * dt_s / (2.0 * eps)) / np.maximum(1.0 + sigma_e * dt_s / (2.0 * eps), 1.0e-9)
+    drive_e = dt_s / np.maximum(eps * (1.0 + sigma_e * dt_s / (2.0 * eps)), 1.0e-18)
+    decay_h = np.exp(-sigma_h * dt_s / np.maximum(mu, 1.0e-18))
+    frozen_mask = conductor_mask_3d | port_mask_3d
+
+    for frame_index in range(steps):
+        curl_h_x = _central_diff_axis(hz, context.dy_m, 1) - _central_diff_axis(hy, dz_m, 0)
+        curl_h_y = _central_diff_axis(hx, dz_m, 0) - _central_diff_axis(hz, context.dx_m, 2)
+        curl_h_z = _central_diff_axis(hy, context.dx_m, 2) - _central_diff_axis(hx, context.dy_m, 1)
+        ex = decay_e * ex + drive_e * curl_h_x
+        ey = decay_e * ey + drive_e * curl_h_y
+        ez = decay_e * ez + drive_e * curl_h_z
+
+        time_s = frame_index * dt_s
+        ramp_s = max(8.0 * dt_s, 1.0e-12)
+        for port in port_entries:
+            drive = _port_signal(port, time_s, ramp_s)
+            mask = port["mask_3d"]
+            angle = math.radians(float(port.get("rotation_deg", 0.0)))
+            dir_x = math.cos(angle)
+            dir_y = math.sin(angle)
+            if str(port.get("source_kind", "voltage")).lower() == "current":
+                ez[mask] += 0.12 * drive * dt_s / np.maximum(eps[mask], 1.0e-18)
+            else:
+                ex[mask] = 0.88 * ex[mask] + 0.12 * drive * dir_x
+                ey[mask] = 0.88 * ey[mask] + 0.12 * drive * dir_y
+                ez[mask] = 0.92 * ez[mask]
+
+        ex = _low_pass_volume(ex, frozen_mask, strength=0.07, passes=1)
+        ey = _low_pass_volume(ey, frozen_mask, strength=0.07, passes=1)
+        ez = _low_pass_volume(ez, frozen_mask, strength=0.07, passes=1)
+
+        ex[conductor_mask_3d] = 0.0
+        ey[conductor_mask_3d] = 0.0
+        ez[conductor_mask_3d] = 0.0
+        ex[0, :, :] = 0.0
+        ex[-1, :, :] = 0.0
+        ex[:, 0, :] = 0.0
+        ex[:, -1, :] = 0.0
+        ex[:, :, 0] = 0.0
+        ex[:, :, -1] = 0.0
+        ey[0, :, :] = 0.0
+        ey[-1, :, :] = 0.0
+        ey[:, 0, :] = 0.0
+        ey[:, -1, :] = 0.0
+        ey[:, :, 0] = 0.0
+        ey[:, :, -1] = 0.0
+        ez[0, :, :] = 0.0
+        ez[-1, :, :] = 0.0
+        ez[:, 0, :] = 0.0
+        ez[:, -1, :] = 0.0
+        ez[:, :, 0] = 0.0
+        ez[:, :, -1] = 0.0
+
+        curl_e_x = _central_diff_axis(ez, context.dy_m, 1) - _central_diff_axis(ey, dz_m, 0)
+        curl_e_y = _central_diff_axis(ex, dz_m, 0) - _central_diff_axis(ez, context.dx_m, 2)
+        curl_e_z = _central_diff_axis(ey, context.dx_m, 2) - _central_diff_axis(ex, context.dy_m, 1)
+        hx = decay_h * (hx - dt_s * curl_e_x / np.maximum(mu, 1.0e-18))
+        hy = decay_h * (hy - dt_s * curl_e_y / np.maximum(mu, 1.0e-18))
+        hz = decay_h * (hz - dt_s * curl_e_z / np.maximum(mu, 1.0e-18))
+        hx = _low_pass_volume(hx, frozen_mask, strength=0.05, passes=1)
+        hy = _low_pass_volume(hy, frozen_mask, strength=0.05, passes=1)
+        hz = _low_pass_volume(hz, frozen_mask, strength=0.05, passes=1)
+        hx[0, :, :] = 0.0
+        hx[-1, :, :] = 0.0
+        hx[:, 0, :] = 0.0
+        hx[:, -1, :] = 0.0
+        hx[:, :, 0] = 0.0
+        hx[:, :, -1] = 0.0
+        hy[0, :, :] = 0.0
+        hy[-1, :, :] = 0.0
+        hy[:, 0, :] = 0.0
+        hy[:, -1, :] = 0.0
+        hy[:, :, 0] = 0.0
+        hy[:, :, -1] = 0.0
+        hz[0, :, :] = 0.0
+        hz[-1, :, :] = 0.0
+        hz[:, 0, :] = 0.0
+        hz[:, -1, :] = 0.0
+        hz[:, :, 0] = 0.0
+        hz[:, :, -1] = 0.0
+
+        electric_frames[frame_index] = np.sqrt(ex * ex + ey * ey + ez * ez)
+        magnetic_frames[frame_index] = MU_0 * mu_3d * np.sqrt(hx * hx + hy * hy + hz * hz)
+
+    return FieldVolumeSequence(
+        bounds_px=static.bounds_px,
+        z_bounds_m=(float(z_min_m), float(z_max_m)),
+        x_coords_px=x_coords_px,
+        y_coords_px=y_coords_px,
+        z_coords_m=z_coords_m,
+        potential_v=potential_volume,
+        electric_frames_v_m=electric_frames,
+        magnetic_frames_t=magnetic_frames,
+        conductor_mask=conductor_mask_3d,
+        metadata={
+            "grid_width": int(nx),
+            "grid_height": int(ny),
+            "grid_depth": int(nz),
+            "scale_m_per_px": float(context.scale_m_per_px),
+            "time_step_s": float(dt_s),
+            "steps": int(steps),
+            "materials_count": int(context.materials_count),
+            "material_layers_count": int(layer_count),
+            "ports_count": int(context.ports_count),
+            "solver": "maxwell_3d_extruded",
+            "note": note,
+        },
+    )

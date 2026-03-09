@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Iterable
 
-from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
+from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, simulate_full_wave_maxwell_3d, solve_quasi_static_field
 from core.project import load_project
 from core.engine import load_example_module
 
@@ -102,6 +102,40 @@ def _save_maxwell(circuit, result, layer: str, target: str, mode: str) -> None:
     )
 
 
+def _save_maxwell_3d(
+    circuit,
+    result,
+    layer: str,
+    target: str,
+    plane: str,
+    slice_index: int | None,
+    render_mode: str,
+    iso_ratio: float,
+) -> None:
+    sequence = simulate_full_wave_maxwell_3d(circuit, result)
+    actual_slice = sequence.slice_count(plane) // 2 if slice_index is None else slice_index
+    if render_mode == "iso":
+        frames = [
+            sequence.isosurface_to_image(layer=layer, frame_index=index, iso_ratio=iso_ratio, scale=2)
+            for index in range(sequence.frame_count())
+        ]
+    else:
+        frames = [
+            sequence.slice_to_image(layer=layer, plane=plane, frame_index=index, slice_index=actual_slice, scale=3)
+            for index in range(sequence.frame_count())
+        ]
+    path = Path(target)
+    frames[0].save(path, save_all=True, append_images=frames[1:], duration=70, loop=0)
+    suffix = f"render={render_mode}, iso={iso_ratio:.2f}" if render_mode == "iso" else f"plane={plane}, slice={actual_slice}"
+    print(f"Saved Maxwell 3D animation to {path} ({layer}, {suffix})")
+    print(
+        f"Maxwell 3D stats: frames={sequence.frame_count()}, "
+        f"grid={sequence.metadata['grid_width']}x{sequence.metadata['grid_height']}x{sequence.metadata['grid_depth']}, "
+        f"E_max={float(sequence.electric_frames_v_m.max()):.5g}, "
+        f"B_max={float(sequence.magnetic_frames_t.max()):.5g}"
+    )
+
+
 def _plot_result(result, plot_currents: bool, plot_temp: bool, plot_nodes: bool, save_plot: str | None) -> None:
     import matplotlib.pyplot as plt
 
@@ -174,7 +208,12 @@ def main() -> None:
     parser.add_argument("--save-field", help="Save a quasi-static field map image to a file.")
     parser.add_argument("--save-fdtd", help="Save a simplified FDTD wave animation to a GIF file.")
     parser.add_argument("--save-maxwell", help="Save a 2D full-wave Maxwell animation to a GIF file.")
+    parser.add_argument("--save-maxwell-3d", help="Save a 3D Maxwell slice animation to a GIF file.")
     parser.add_argument("--maxwell-mode", choices=("tmz", "tez"), default="tmz", help="Maxwell solver mode.")
+    parser.add_argument("--volume-plane", choices=("xy", "xz", "yz"), default="xy", help="Plane for 3D Maxwell export.")
+    parser.add_argument("--volume-slice", type=int, help="Slice index for 3D Maxwell export. Defaults to the middle slice.")
+    parser.add_argument("--volume-render", choices=("slice", "iso"), default="slice", help="How to render 3D Maxwell output.")
+    parser.add_argument("--volume-iso", type=float, default=0.58, help="Isosurface threshold ratio for 3D Maxwell export.")
     parser.add_argument(
         "--field-layer",
         choices=("potential", "electric", "magnetic"),
@@ -193,6 +232,17 @@ def main() -> None:
         _save_fdtd(circuit, result, args.field_layer, args.save_fdtd)
     if args.save_maxwell:
         _save_maxwell(circuit, result, args.field_layer, args.save_maxwell, args.maxwell_mode)
+    if args.save_maxwell_3d:
+        _save_maxwell_3d(
+            circuit,
+            result,
+            args.field_layer,
+            args.save_maxwell_3d,
+            args.volume_plane,
+            args.volume_slice,
+            args.volume_render,
+            args.volume_iso,
+        )
 
 
 if __name__ == "__main__":

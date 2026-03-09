@@ -26,9 +26,11 @@ from .components import (
 from .engine import Circuit, SimulationResult
 from .field_solver import (
     FieldSnapshot,
+    FieldVolumeSequence,
     FieldWaveSequence,
     simulate_fdtd_wave,
     simulate_full_wave_maxwell_2d,
+    simulate_full_wave_maxwell_3d,
     simulate_full_wave_maxwell_2d_tez,
     solve_quasi_static_field,
 )
@@ -51,10 +53,12 @@ __all__ = [
     "TwoTerminalComponent",
     "SimulationResult",
     "FieldSnapshot",
+    "FieldVolumeSequence",
     "FieldWaveSequence",
     "solve_quasi_static_field",
     "simulate_fdtd_wave",
     "simulate_full_wave_maxwell_2d",
+    "simulate_full_wave_maxwell_3d",
     "simulate_full_wave_maxwell_2d_tez",
     "COMPONENT_LIBRARY",
     "COMPONENT_TERMINALS",
