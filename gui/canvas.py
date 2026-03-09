@@ -10,12 +10,22 @@ from PyQt6.QtWidgets import (
     QGraphicsItem,
     QGraphicsObject,
     QGraphicsPathItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
 )
 
-from core import CircuitProject, ComponentRecord, PinRef, ProjectSettings, WireRecord, wire_component_name
+from core import (
+    CircuitProject,
+    ComponentRecord,
+    FieldPortRecord,
+    MaterialRegionRecord,
+    PinRef,
+    ProjectSettings,
+    WireRecord,
+    wire_component_name,
+)
 from core.physics import MATERIALS, wire_resistance
 
 from .components_visual import build_qpixmap, default_params, default_visual_state, template_for
@@ -26,12 +36,16 @@ NAME_PREFIXES = {
     "Junction": "Точка",
     "Battery": "Батарея",
     "AC Generator": "Генератор",
+    "Pulse Generator": "ИмпГен",
     "Resistor": "Резистор",
+    "Thermistor": "Термистор",
+    "Photoresistor": "Фоторезистор",
     "Capacitor": "Конденсатор",
     "Inductor": "Катушка",
     "Wire": "Провод",
     "Diode": "Диод",
     "LED": "Светодиод",
+    "Varistor": "Варистор",
     "Fuse": "Предохранитель",
     "Bulb": "Лампа",
     "Ammeter": "Амперметр",
@@ -39,6 +53,30 @@ NAME_PREFIXES = {
     "Switch": "Переключатель",
     "MOSFET": "MOSFET",
     "OpAmp": "ОУ",
+    "FieldMaterial": "Среда",
+    "FieldPort": "Порт",
+}
+
+FIELD_MATERIAL_DEFAULTS = {
+    "width_px": 220.0,
+    "height_px": 140.0,
+    "rotation_deg": 0.0,
+    "epsilon_r": 4.2,
+    "sigma_s_per_m": 0.0,
+    "mu_r": 1.0,
+}
+
+FIELD_PORT_DEFAULTS = {
+    "width_px": 90.0,
+    "height_px": 18.0,
+    "rotation_deg": 0.0,
+    "source_kind": "voltage",
+    "waveform": "sine",
+    "amplitude_v": 5.0,
+    "amplitude_a": 0.2,
+    "frequency_hz": 1.0e6,
+    "phase_rad": 0.0,
+    "impedance_ohm": 50.0,
 }
 
 
@@ -103,6 +141,27 @@ class WireHandleItem(QGraphicsEllipseItem):
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         self.wire_item.remove_route_point(self.index)
         event.accept()
+
+
+class RectTransformHandleItem(QGraphicsEllipseItem):
+    def __init__(self, owner: QGraphicsRectItem, role: str, position: QPointF, color: str) -> None:
+        super().__init__(-6.0, -6.0, 12.0, 12.0, owner)
+        self.owner = owner
+        self.role = role
+        self.setPos(position)
+        self.setZValue(16)
+        self.setBrush(QBrush(QColor(color)))
+        self.setPen(QPen(QColor("#fff7ed"), 2.0))
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+    def itemChange(self, change, value):  # noqa: N802
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged and hasattr(self.owner, "handle_transform_drag"):
+            self.owner.handle_transform_drag(self.role, value)
+        return super().itemChange(change, value)
 
 
 class WireItem(QGraphicsPathItem):
@@ -268,6 +327,214 @@ class WireItem(QGraphicsPathItem):
         return super().itemChange(change, value)
 
 
+class MaterialRegionItem(QGraphicsRectItem):
+    def __init__(
+        self,
+        scene_controller: "CircuitScene",
+        region_id: int,
+        name: str,
+        position: QPointF,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__()
+        self.scene_controller = scene_controller
+        self.region_id = region_id
+        self.kind = "FieldMaterial"
+        self.name = name
+        self.params = dict(FIELD_MATERIAL_DEFAULTS)
+        if params:
+            self.params.update(params)
+        self.label_item = QGraphicsSimpleTextItem(self.name, self)
+        self.label_item.setZValue(2)
+        self.transform_handles: dict[str, RectTransformHandleItem] = {}
+        self._updating_handles = False
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+        self.setZValue(-35)
+        self.setPos(position)
+        self.refresh_visuals()
+
+    def rename(self, new_name: str) -> None:
+        self.name = new_name
+        self.label_item.setText(new_name)
+        self.refresh_visuals()
+
+    def refresh_visuals(self) -> None:
+        width = max(float(self.params.get("width_px", 220.0)), 18.0)
+        height = max(float(self.params.get("height_px", 140.0)), 18.0)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setRotation(float(self.params.get("rotation_deg", 0.0)))
+        epsilon_r = max(float(self.params.get("epsilon_r", 1.0)), 1.0)
+        sigma = max(float(self.params.get("sigma_s_per_m", 0.0)), 0.0)
+        mu_r = max(float(self.params.get("mu_r", 1.0)), 0.1)
+        alpha = min(120 + int(12 * epsilon_r), 185)
+        border = QColor("#0f766e") if not self.isSelected() else QColor("#d97706")
+        fill = QColor(62, 142, 197, alpha)
+        if sigma > 1.0e3:
+            fill = QColor(90, 94, 99, min(210, alpha + 35))
+        if mu_r > 1.5:
+            fill = QColor(117, 76, 36, min(200, alpha + 18))
+        self.setPen(QPen(border, 2.0))
+        self.setBrush(QBrush(fill))
+        text_color = QColor("#7c2d12") if self.isSelected() else QColor("#134e4a")
+        self.label_item.setBrush(QBrush(text_color))
+        text_rect = self.label_item.boundingRect()
+        self.label_item.setPos(-text_rect.width() / 2, -height / 2 - text_rect.height() - 6)
+        self._sync_transform_handles()
+        self.update()
+
+    def apply_params(self, updated: dict[str, Any]) -> None:
+        self.params.update(updated)
+        self.refresh_visuals()
+
+    def to_record(self) -> MaterialRegionRecord:
+        pos = self.pos()
+        return MaterialRegionRecord(
+            region_id=self.region_id,
+            name=self.name,
+            x=float(pos.x()),
+            y=float(pos.y()),
+            params=dict(self.params),
+        )
+
+    def _sync_transform_handles(self) -> None:
+        if "resize" not in self.transform_handles:
+            self.transform_handles["resize"] = RectTransformHandleItem(self, "resize", QPointF(), "#22c55e")
+            self.transform_handles["rotate"] = RectTransformHandleItem(self, "rotate", QPointF(), "#2563eb")
+        width = max(float(self.params.get("width_px", 220.0)), 18.0)
+        height = max(float(self.params.get("height_px", 140.0)), 18.0)
+        visible = self.isSelected()
+        self._updating_handles = True
+        self.transform_handles["resize"].setPos(QPointF(width * 0.5, height * 0.5))
+        self.transform_handles["rotate"].setPos(QPointF(0.0, -height * 0.5 - 24.0))
+        self._updating_handles = False
+        for handle in self.transform_handles.values():
+            handle.setVisible(visible)
+
+    def handle_transform_drag(self, role: str, value: QPointF) -> None:
+        if self._updating_handles:
+            return
+        point = QPointF(value)
+        if role == "resize":
+            self.params["width_px"] = max(abs(point.x()) * 2.0, 18.0)
+            self.params["height_px"] = max(abs(point.y()) * 2.0, 18.0)
+        elif role == "rotate":
+            scene_center = self.mapToScene(QPointF(0.0, 0.0))
+            scene_point = self.mapToScene(point)
+            self.params["rotation_deg"] = math.degrees(math.atan2(scene_point.y() - scene_center.y(), scene_point.x() - scene_center.x())) + 90.0
+        self.refresh_visuals()
+
+    def itemChange(self, change, value):  # noqa: N802
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.refresh_visuals()
+        return super().itemChange(change, value)
+
+
+class FieldPortItem(QGraphicsRectItem):
+    def __init__(
+        self,
+        scene_controller: "CircuitScene",
+        port_id: int,
+        name: str,
+        position: QPointF,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__()
+        self.scene_controller = scene_controller
+        self.port_id = port_id
+        self.kind = "FieldPort"
+        self.name = name
+        self.params = dict(FIELD_PORT_DEFAULTS)
+        if params:
+            self.params.update(params)
+        self.label_item = QGraphicsSimpleTextItem(self.name, self)
+        self.label_item.setZValue(2)
+        self.transform_handles: dict[str, RectTransformHandleItem] = {}
+        self._updating_handles = False
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+        self.setZValue(-18)
+        self.setPos(position)
+        self.refresh_visuals()
+
+    def rename(self, new_name: str) -> None:
+        self.name = new_name
+        self.label_item.setText(new_name)
+        self.refresh_visuals()
+
+    def refresh_visuals(self) -> None:
+        width = max(float(self.params.get("width_px", 90.0)), 10.0)
+        height = max(float(self.params.get("height_px", 18.0)), 6.0)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setRotation(float(self.params.get("rotation_deg", 0.0)))
+        source_kind = str(self.params.get("source_kind", "voltage")).lower()
+        fill = QColor("#7c3aed" if source_kind == "current" else "#0f766e")
+        if self.isSelected():
+            fill = QColor("#d97706")
+        fill.setAlpha(185)
+        self.setPen(QPen(QColor("#f8fafc"), 1.6))
+        self.setBrush(QBrush(fill))
+        self.label_item.setBrush(QBrush(QColor("#5b21b6") if source_kind == "current" else QColor("#064e3b")))
+        if self.isSelected():
+            self.label_item.setBrush(QBrush(QColor("#92400e")))
+        text_rect = self.label_item.boundingRect()
+        self.label_item.setPos(-text_rect.width() / 2, -height / 2 - text_rect.height() - 6)
+        self._sync_transform_handles()
+        self.update()
+
+    def apply_params(self, updated: dict[str, Any]) -> None:
+        self.params.update(updated)
+        self.refresh_visuals()
+
+    def to_record(self) -> FieldPortRecord:
+        pos = self.pos()
+        return FieldPortRecord(
+            port_id=self.port_id,
+            name=self.name,
+            x=float(pos.x()),
+            y=float(pos.y()),
+            params=dict(self.params),
+        )
+
+    def _sync_transform_handles(self) -> None:
+        if "resize" not in self.transform_handles:
+            self.transform_handles["resize"] = RectTransformHandleItem(self, "resize", QPointF(), "#22c55e")
+            self.transform_handles["rotate"] = RectTransformHandleItem(self, "rotate", QPointF(), "#2563eb")
+        width = max(float(self.params.get("width_px", 90.0)), 10.0)
+        height = max(float(self.params.get("height_px", 18.0)), 6.0)
+        visible = self.isSelected()
+        self._updating_handles = True
+        self.transform_handles["resize"].setPos(QPointF(width * 0.5, height * 0.5))
+        self.transform_handles["rotate"].setPos(QPointF(0.0, -height * 0.5 - 24.0))
+        self._updating_handles = False
+        for handle in self.transform_handles.values():
+            handle.setVisible(visible)
+
+    def handle_transform_drag(self, role: str, value: QPointF) -> None:
+        if self._updating_handles:
+            return
+        point = QPointF(value)
+        if role == "resize":
+            self.params["width_px"] = max(abs(point.x()) * 2.0, 10.0)
+            self.params["height_px"] = max(abs(point.y()) * 2.0, 6.0)
+        elif role == "rotate":
+            scene_center = self.mapToScene(QPointF(0.0, 0.0))
+            scene_point = self.mapToScene(point)
+            self.params["rotation_deg"] = math.degrees(math.atan2(scene_point.y() - scene_center.y(), scene_point.x() - scene_center.x())) + 90.0
+        self.refresh_visuals()
+
+    def itemChange(self, change, value):  # noqa: N802
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.refresh_visuals()
+        return super().itemChange(change, value)
+
+
 class ComponentItem(QGraphicsObject):
     def __init__(
         self,
@@ -428,6 +695,7 @@ class ComponentItem(QGraphicsObject):
 class CircuitScene(QGraphicsScene):
     selection_changed = pyqtSignal(object)
     status_changed = pyqtSignal(str)
+    animation_state_changed = pyqtSignal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -438,9 +706,13 @@ class CircuitScene(QGraphicsScene):
         self.selected_terminal: TerminalItem | None = None
         self.component_items: dict[int, ComponentItem] = {}
         self.wire_items: dict[int, WireItem] = {}
+        self.material_items: dict[int, MaterialRegionItem] = {}
+        self.port_items: dict[int, FieldPortItem] = {}
         self.component_counters: dict[str, int] = {}
         self.next_component_id = 1
         self.next_wire_id = 1
+        self.next_material_id = 1
+        self.next_port_id = 1
         self.animation_timer = QTimer()
         self.animation_timer.timeout.connect(self._advance_animation)
         self.animation_result = None
@@ -454,6 +726,20 @@ class CircuitScene(QGraphicsScene):
         self.route_mode = False
         self._clear_terminal_highlight()
         self.status_changed.emit(f"Режим добавления: {template_for(kind).display_name}. Нажми на холст, чтобы поставить элемент.")
+
+    def set_place_material_mode(self) -> None:
+        self.place_kind = "FieldMaterial"
+        self.connect_mode = False
+        self.route_mode = False
+        self._clear_terminal_highlight()
+        self.status_changed.emit("Режим добавления среды: нажми на холст, чтобы поставить область материала.")
+
+    def set_place_port_mode(self) -> None:
+        self.place_kind = "FieldPort"
+        self.connect_mode = False
+        self.route_mode = False
+        self._clear_terminal_highlight()
+        self.status_changed.emit("Режим добавления порта: нажми на холст, чтобы поставить полевой порт.")
 
     def set_connect_mode(self) -> None:
         self.place_kind = None
@@ -482,22 +768,48 @@ class CircuitScene(QGraphicsScene):
 
     def stop_animation(self) -> None:
         self.animation_timer.stop()
+        self.animation_state_changed.emit()
+
+    def toggle_animation(self) -> bool:
+        if self.animation_result is None or len(self.animation_result.time_s) <= 1:
+            return False
+        if self.animation_timer.isActive():
+            self.animation_timer.stop()
+            self.animation_state_changed.emit()
+            return False
+        if self.animation_frame >= len(self.animation_result.time_s) - 1:
+            self.animation_frame = 0
+            self.apply_result_frame(0)
+        self.animation_timer.start(25)
+        self.animation_state_changed.emit()
+        return True
 
     def clear_circuit(self) -> None:
         self.stop_animation()
+        self.animation_result = None
+        self.animation_frame = 0
         self.clear()
         self.component_items.clear()
         self.wire_items.clear()
+        self.material_items.clear()
+        self.port_items.clear()
         self.component_counters.clear()
         self.component_name_map.clear()
         self.next_component_id = 1
         self.next_wire_id = 1
+        self.next_material_id = 1
+        self.next_port_id = 1
         self.route_mode = False
         self.selected_terminal = None
         self.selection_changed.emit(None)
 
     def _emit_selection_change(self) -> None:
-        self.selection_changed.emit(self.selected_component() or self.selected_wire())
+        self.selection_changed.emit(
+            self.selected_component()
+            or self.selected_wire()
+            or self.selected_material()
+            or self.selected_port()
+        )
 
     def _clear_terminal_highlight(self) -> None:
         if self.selected_terminal is not None:
@@ -513,6 +825,18 @@ class CircuitScene(QGraphicsScene):
     def selected_wire(self) -> WireItem | None:
         for item in self.selectedItems():
             if isinstance(item, WireItem):
+                return item
+        return None
+
+    def selected_material(self) -> MaterialRegionItem | None:
+        for item in self.selectedItems():
+            if isinstance(item, MaterialRegionItem):
+                return item
+        return None
+
+    def selected_port(self) -> FieldPortItem | None:
+        for item in self.selectedItems():
+            if isinstance(item, FieldPortItem):
                 return item
         return None
 
@@ -568,11 +892,98 @@ class CircuitScene(QGraphicsScene):
         existing = self.component_name_map.get(candidate)
         if existing is not None and existing is not component_item:
             raise ValueError(f"Имя '{candidate}' уже используется.")
+        for item in list(self.material_items.values()) + list(self.port_items.values()):
+            if item.name == candidate:
+                raise ValueError(f"Имя '{candidate}' уже используется.")
         self.component_name_map.pop(component_item.name, None)
         component_item.rename(candidate)
         self.component_name_map[candidate] = component_item
         self._register_name(component_item.kind, candidate)
         self.status_changed.emit(f"Элемент переименован: {candidate}.")
+
+    def rename_material(self, material_item: MaterialRegionItem, new_name: str) -> None:
+        candidate = new_name.strip()
+        if not candidate:
+            raise ValueError("Имя области не может быть пустым.")
+        if candidate == material_item.name:
+            return
+        if candidate in self.component_name_map or any(item.name == candidate for item in self.port_items.values()):
+            raise ValueError(f"Имя '{candidate}' уже используется.")
+        for item in self.material_items.values():
+            if item is not material_item and item.name == candidate:
+                raise ValueError(f"Имя '{candidate}' уже используется.")
+        material_item.rename(candidate)
+        self._register_name("FieldMaterial", candidate)
+        self.status_changed.emit(f"Область переименована: {candidate}.")
+
+    def rename_port(self, port_item: FieldPortItem, new_name: str) -> None:
+        candidate = new_name.strip()
+        if not candidate:
+            raise ValueError("Имя порта не может быть пустым.")
+        if candidate == port_item.name:
+            return
+        if candidate in self.component_name_map or any(item.name == candidate for item in self.material_items.values()):
+            raise ValueError(f"Имя '{candidate}' уже используется.")
+        for item in self.port_items.values():
+            if item is not port_item and item.name == candidate:
+                raise ValueError(f"Имя '{candidate}' уже используется.")
+        port_item.rename(candidate)
+        self._register_name("FieldPort", candidate)
+        self.status_changed.emit(f"Порт переименован: {candidate}.")
+
+    def add_material_region(
+        self,
+        position: QPointF,
+        *,
+        region_id: int | None = None,
+        name: str | None = None,
+        params: dict[str, Any] | None = None,
+        select_new: bool = True,
+    ) -> MaterialRegionItem:
+        region_id = self.next_material_id if region_id is None else region_id
+        self.next_material_id = max(self.next_material_id, region_id + 1)
+        name = self._next_name("FieldMaterial") if name is None else name
+        self._register_name("FieldMaterial", name)
+        item = MaterialRegionItem(self, region_id, name, position, params=params)
+        self.addItem(item)
+        self.material_items[region_id] = item
+        if select_new:
+            self.clearSelection()
+            item.setSelected(True)
+        self.status_changed.emit(f"Добавлена область среды: {name}.")
+        return item
+
+    def add_field_port(
+        self,
+        position: QPointF,
+        *,
+        port_id: int | None = None,
+        name: str | None = None,
+        params: dict[str, Any] | None = None,
+        select_new: bool = True,
+    ) -> FieldPortItem:
+        port_id = self.next_port_id if port_id is None else port_id
+        self.next_port_id = max(self.next_port_id, port_id + 1)
+        name = self._next_name("FieldPort") if name is None else name
+        self._register_name("FieldPort", name)
+        item = FieldPortItem(self, port_id, name, position, params=params)
+        self.addItem(item)
+        self.port_items[port_id] = item
+        if select_new:
+            self.clearSelection()
+            item.setSelected(True)
+        self.status_changed.emit(f"Добавлен полевой порт: {name}.")
+        return item
+
+    def remove_material(self, material_item: MaterialRegionItem) -> None:
+        self.material_items.pop(material_item.region_id, None)
+        self.removeItem(material_item)
+        self.status_changed.emit(f"Удалена область среды: {material_item.name}.")
+
+    def remove_port(self, port_item: FieldPortItem) -> None:
+        self.port_items.pop(port_item.port_id, None)
+        self.removeItem(port_item)
+        self.status_changed.emit(f"Удален полевой порт: {port_item.name}.")
 
     def add_wire(
         self,
@@ -619,7 +1030,9 @@ class CircuitScene(QGraphicsScene):
     def delete_selected(self) -> None:
         selected_components = [item for item in self.selectedItems() if isinstance(item, ComponentItem)]
         selected_wires = [item for item in self.selectedItems() if isinstance(item, WireItem)]
-        if not selected_components and not selected_wires:
+        selected_materials = [item for item in self.selectedItems() if isinstance(item, MaterialRegionItem)]
+        selected_ports = [item for item in self.selectedItems() if isinstance(item, FieldPortItem)]
+        if not selected_components and not selected_wires and not selected_materials and not selected_ports:
             return
         self._clear_terminal_highlight()
         for wire in list(selected_wires):
@@ -628,6 +1041,12 @@ class CircuitScene(QGraphicsScene):
         for component in list(selected_components):
             if component.component_id in self.component_items:
                 self.remove_component(component)
+        for material in list(selected_materials):
+            if material.region_id in self.material_items:
+                self.remove_material(material)
+        for port in list(selected_ports):
+            if port.port_id in self.port_items:
+                self.remove_port(port)
         self.clearSelection()
         self.status_changed.emit("Выделенные объекты удалены.")
         self.selection_changed.emit(None)
@@ -672,6 +1091,14 @@ class CircuitScene(QGraphicsScene):
                 self.status_changed.emit(f"Добавлена точка маршрута для провода {selected_wire.wire_id}.")
                 event.accept()
                 return
+        if self.place_kind == "FieldMaterial" and item is None:
+            self.add_material_region(event.scenePos())
+            event.accept()
+            return
+        if self.place_kind == "FieldPort" and item is None:
+            self.add_field_port(event.scenePos())
+            event.accept()
+            return
         if self.place_kind is not None and item is None:
             self.add_component(self.place_kind, event.scenePos())
             event.accept()
@@ -680,6 +1107,8 @@ class CircuitScene(QGraphicsScene):
 
     def build_project(self, name: str, duration_s: float, dt_s: float) -> CircuitProject:
         components = [item.to_record() for item in sorted(self.component_items.values(), key=lambda entry: entry.component_id)]
+        material_regions = [item.to_record() for item in sorted(self.material_items.values(), key=lambda entry: entry.region_id)]
+        field_ports = [item.to_record() for item in sorted(self.port_items.values(), key=lambda entry: entry.port_id)]
         wires = []
         for wire in sorted(self.wire_items.values(), key=lambda entry: entry.wire_id):
             wires.append(
@@ -694,7 +1123,14 @@ class CircuitScene(QGraphicsScene):
                     b_position=(float(wire.b_terminal.center_in_scene().x()), float(wire.b_terminal.center_in_scene().y())),
                 )
             )
-        return CircuitProject(name=name, settings=ProjectSettings(duration_s=duration_s, dt_s=dt_s), components=components, wires=wires)
+        return CircuitProject(
+            name=name,
+            settings=ProjectSettings(duration_s=duration_s, dt_s=dt_s),
+            components=components,
+            wires=wires,
+            material_regions=material_regions,
+            field_ports=field_ports,
+        )
 
     def load_project(self, project: CircuitProject) -> None:
         self.clear_circuit()
@@ -718,6 +1154,22 @@ class CircuitScene(QGraphicsScene):
                 wire_id=wire.wire_id,
                 params=wire.params,
                 route_points=wire.route_points,
+            )
+        for region in sorted(project.material_regions, key=lambda entry: entry.region_id):
+            self.add_material_region(
+                QPointF(region.x, region.y),
+                region_id=region.region_id,
+                name=region.name,
+                params=region.params,
+                select_new=False,
+            )
+        for port in sorted(project.field_ports, key=lambda entry: entry.port_id):
+            self.add_field_port(
+                QPointF(port.x, port.y),
+                port_id=port.port_id,
+                name=port.name,
+                params=port.params,
+                select_new=False,
             )
         self.status_changed.emit(f"Проект загружен: {project.name}")
 
@@ -747,16 +1199,21 @@ class CircuitScene(QGraphicsScene):
         self.apply_result_frame(0)
         if len(result.time_s) > 1:
             self.animation_timer.start(25)
+        self.animation_state_changed.emit()
 
     def _advance_animation(self) -> None:
         if self.animation_result is None:
             self.animation_timer.stop()
+            self.animation_state_changed.emit()
             return
         self.animation_frame += 1
         if self.animation_frame >= len(self.animation_result.time_s):
-            self.animation_timer.stop()
-            return
+            self.animation_frame = len(self.animation_result.time_s) - 1
         self.apply_result_frame(self.animation_frame)
+        if self.animation_frame >= len(self.animation_result.time_s) - 1:
+            self.animation_timer.stop()
+            self.animation_state_changed.emit()
+            return
 
 
 class CircuitView(QGraphicsView):

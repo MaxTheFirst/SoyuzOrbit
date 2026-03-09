@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
 from core import COMPONENT_TERMINALS, load_project
 from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
 
-from .canvas import CircuitScene, CircuitView, ComponentItem, WireItem
+from .canvas import CircuitScene, CircuitView, ComponentItem, FieldPortItem, MaterialRegionItem, WireItem
 from .components_visual import build_qicon, default_params, default_visual_state, template_for
 from .field_dialog import FieldPreviewDialog
 
@@ -40,13 +40,24 @@ PARAMETER_LABELS = {
     "chemistry": "Химия",
     "internal_resistance_ohm": "Внутреннее сопротивление, Ом",
     "amplitude_v": "Амплитуда, В",
+    "high_voltage_v": "Высокий уровень, В",
+    "low_voltage_v": "Низкий уровень, В",
     "frequency_hz": "Частота, Гц",
     "phase_rad": "Фаза, рад",
+    "rotation_deg": "Поворот, °",
+    "period_s": "Период, с",
+    "pulse_width_s": "Длительность импульса, с",
+    "duty_cycle": "Скважность",
+    "rise_time_s": "Время фронта, с",
+    "fall_time_s": "Время спада, с",
     "phase_noise_rad": "Фазовый шум, рад",
     "frequency_error": "Ошибка частоты",
     "harmonic_2_ratio": "2-я гармоника",
     "harmonic_3_ratio": "3-я гармоника",
     "resistance_ohm": "Сопротивление, Ом",
+    "resistance_at_25c_ohm": "Сопротивление при 25°C, Ом",
+    "beta_k": "Beta, K",
+    "series_resistance_ohm": "Последоват. сопротивление, Ом",
     "tolerance": "Допуск",
     "tolerance_bias": "Смещение допуска",
     "temperature_coefficient": "ТКС",
@@ -61,6 +72,8 @@ PARAMETER_LABELS = {
     "relative_permeability": "Отн. проницаемость",
     "interwinding_capacitance_f": "Межвитковая емкость, Ф",
     "length_m": "Длина, м",
+    "width_px": "Ширина, px",
+    "height_px": "Высота, px",
     "area_mm2": "Сечение, мм²",
     "material": "Материал",
     "auto_length_from_path": "Длина из маршрута",
@@ -73,7 +86,13 @@ PARAMETER_LABELS = {
     "thermal_coupling_gain": "Тепловая связь",
     "contact_resistance_ohm": "Контактное сопротивление, Ом",
     "dielectric_conductance_s_per_m": "Проводимость диэлектрика, С/м",
+    "sigma_s_per_m": "Проводимость, С/м",
+    "mu_r": "Отн. магнитная проницаемость",
     "proximity_gain": "Коэф. близости",
+    "source_kind": "Тип источника",
+    "waveform": "Форма сигнала",
+    "impedance_ohm": "Импеданс порта, Ом",
+    "amplitude_a": "Амплитуда, А",
     "emission_coefficient": "Коэф. эмиссии",
     "barrier_capacitance_f": "Барьерная емкость, Ф",
     "forward_drop_v": "Прямое падение, В",
@@ -89,9 +108,18 @@ PARAMETER_LABELS = {
     "relative_permittivity": "Отн. диэлектрич. проницаемость",
     "shunt_resistance_ohm": "Шунт, Ом",
     "color": "Цвет",
+    "dark_resistance_ohm": "Темновое сопротивление, Ом",
+    "light_resistance_ohm": "Световое сопротивление, Ом",
+    "illumination_lux": "Освещенность, лк",
+    "lux_reference": "Опорная освещенность, лк",
+    "gamma": "Показатель гамма",
     "max_forward_current_a": "Макс. прямой ток, А",
     "luminous_efficiency": "Светоотдача",
     "threshold_v": "Порог, В",
+    "clamp_voltage_v": "Напряжение ограничения, В",
+    "dynamic_resistance_ohm": "Динамическое сопротивление, Ом",
+    "leakage_current_a": "Ток утечки, А",
+    "nonlinear_exponent": "Нелинейный показатель",
     "rds_on_ohm": "Rds(on), Ом",
     "cgs_f": "Cgs, Ф",
     "cgd_f": "Cgd, Ф",
@@ -180,11 +208,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Симулятор электрических цепей")
         self.resize(1520, 940)
-        self.current_selected: ComponentItem | WireItem | None = None
+        self.current_selected: ComponentItem | WireItem | MaterialRegionItem | FieldPortItem | None = None
         self.name_input: QLineEdit | None = None
         self.rotation_input: QLineEdit | None = None
         self.property_inputs: dict[str, QLineEdit] = {}
         self.library_buttons: list[QPushButton] = []
+        self.animation_toggle_button: QPushButton | None = None
         self.last_circuit = None
         self.last_result = None
         self.last_field_snapshot = None
@@ -194,6 +223,7 @@ class MainWindow(QMainWindow):
         self.scene = CircuitScene(self)
         self.scene.selection_changed.connect(self._on_selection_changed)
         self.scene.status_changed.connect(self.statusBar().showMessage)
+        self.scene.animation_state_changed.connect(self._sync_animation_button)
         self.view = CircuitView(self.scene, self)
 
         self.duration_input = QLineEdit("0.03")
@@ -274,16 +304,20 @@ class MainWindow(QMainWindow):
             "Junction",
             "Battery",
             "Resistor",
+            "Thermistor",
+            "Photoresistor",
             "Ammeter",
             "Voltmeter",
             "Capacitor",
             "Inductor",
             "Diode",
             "LED",
+            "Varistor",
             "Fuse",
             "Bulb",
             "Switch",
             "AC Generator",
+            "Pulse Generator",
             "MOSFET",
             "OpAmp",
         ]
@@ -316,10 +350,14 @@ class MainWindow(QMainWindow):
         delete_button.clicked.connect(self.scene.delete_selected)
         route_button = QPushButton("Трассировка")
         route_button.clicked.connect(self.scene.set_route_mode)
+        material_button = QPushButton("Среда")
+        material_button.clicked.connect(self.scene.set_place_material_mode)
+        port_button = QPushButton("Порт поля")
+        port_button.clicked.connect(self.scene.set_place_port_mode)
         clear_button = QPushButton("Очистить")
         clear_button.clicked.connect(self.scene.clear_circuit)
-        stop_button = QPushButton("Стоп анимации")
-        stop_button.clicked.connect(self.scene.stop_animation)
+        self.animation_toggle_button = QPushButton("Пауза")
+        self.animation_toggle_button.clicked.connect(self._toggle_animation)
         save_button = QPushButton("Сохранить JSON")
         save_button.clicked.connect(self._save_project)
         load_button = QPushButton("Загрузить JSON")
@@ -330,20 +368,25 @@ class MainWindow(QMainWindow):
         field_button.clicked.connect(self._show_field_map)
         fdtd_button = QPushButton("FDTD волна")
         fdtd_button.clicked.connect(self._show_fdtd_wave)
-        maxwell_button = QPushButton("Maxwell 2D")
-        maxwell_button.clicked.connect(self._show_maxwell_wave)
+        maxwell_button = QPushButton("Maxwell TMz")
+        maxwell_button.clicked.connect(self._show_maxwell_tmz_wave)
+        maxwell_tez_button = QPushButton("Maxwell TEz")
+        maxwell_tez_button.clicked.connect(self._show_maxwell_tez_wave)
 
         layout.addWidget(wire_button, 2, 0)
         layout.addWidget(delete_button, 2, 1)
         layout.addWidget(route_button, 3, 0, 1, 2)
-        layout.addWidget(clear_button, 4, 0)
-        layout.addWidget(stop_button, 4, 1)
-        layout.addWidget(save_button, 5, 0)
-        layout.addWidget(load_button, 5, 1)
-        layout.addWidget(start_button, 6, 0)
-        layout.addWidget(field_button, 6, 1)
-        layout.addWidget(fdtd_button, 7, 0, 1, 2)
-        layout.addWidget(maxwell_button, 8, 0, 1, 2)
+        layout.addWidget(material_button, 4, 0)
+        layout.addWidget(port_button, 4, 1)
+        layout.addWidget(clear_button, 5, 0)
+        layout.addWidget(self.animation_toggle_button, 5, 1)
+        layout.addWidget(save_button, 6, 0)
+        layout.addWidget(load_button, 6, 1)
+        layout.addWidget(start_button, 7, 0)
+        layout.addWidget(field_button, 7, 1)
+        layout.addWidget(fdtd_button, 8, 0, 1, 2)
+        layout.addWidget(maxwell_button, 9, 0)
+        layout.addWidget(maxwell_tez_button, 9, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -364,13 +407,19 @@ class MainWindow(QMainWindow):
         self.properties_group.adjustSize()
         self.properties_panel.adjustSize()
 
-    def _on_selection_changed(self, selected: ComponentItem | WireItem | None) -> None:
+    def _on_selection_changed(self, selected: ComponentItem | WireItem | MaterialRegionItem | FieldPortItem | None) -> None:
         self.current_selected = selected
         if selected is None:
             self._clear_properties("Выбери элемент, чтобы менять его параметры.")
             return
         if isinstance(selected, WireItem):
             self._show_wire_properties(selected)
+            return
+        if isinstance(selected, MaterialRegionItem):
+            self._show_field_object_properties(selected, "Область материала")
+            return
+        if isinstance(selected, FieldPortItem):
+            self._show_field_object_properties(selected, "Полевой порт")
             return
         component = selected
         self.rotation_input = None
@@ -395,6 +444,26 @@ class MainWindow(QMainWindow):
             self.properties_form.addRow(QLabel(PARAMETER_LABELS.get(key, key)), line)
         if not self.property_inputs:
             self.properties_form.addRow(QLabel("Редактируемых параметров нет."))
+        apply_button = QPushButton("Применить")
+        apply_button.clicked.connect(self._apply_properties)
+        self.properties_form.addRow(apply_button)
+        self.properties_group.adjustSize()
+        self.properties_panel.adjustSize()
+
+    def _show_field_object_properties(self, item: MaterialRegionItem | FieldPortItem, title: str) -> None:
+        self.rotation_input = None
+        self.property_inputs.clear()
+        while self.properties_form.rowCount():
+            self.properties_form.removeRow(0)
+        header = QLabel(f"{item.name} ({title})")
+        header.setStyleSheet("font-weight: 600;")
+        self.properties_form.addRow(header)
+        self.name_input = QLineEdit(item.name)
+        self.properties_form.addRow(QLabel("Имя"), self.name_input)
+        for key, value in item.params.items():
+            line = QLineEdit(str(value))
+            self.property_inputs[key] = line
+            self.properties_form.addRow(QLabel(PARAMETER_LABELS.get(key, key)), line)
         apply_button = QPushButton("Применить")
         apply_button.clicked.connect(self._apply_properties)
         self.properties_form.addRow(apply_button)
@@ -456,6 +525,45 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Параметры провода {self.current_selected.wire_id} обновлены.")
                 self._show_wire_properties(self.current_selected)
                 return
+            if isinstance(self.current_selected, MaterialRegionItem):
+                if self.name_input is not None:
+                    self.scene.rename_material(self.current_selected, self.name_input.text())
+                base = {
+                    "width_px": 220.0,
+                    "height_px": 140.0,
+                    "epsilon_r": 4.2,
+                    "sigma_s_per_m": 0.0,
+                    "mu_r": 1.0,
+                }
+                updated = {}
+                for key, widget in self.property_inputs.items():
+                    updated[key] = self._coerce_value(widget.text(), base.get(key, self.current_selected.params.get(key, "")))
+                self.current_selected.apply_params(updated)
+                self.statusBar().showMessage(f"Параметры области обновлены: {self.current_selected.name}.")
+                self._show_field_object_properties(self.current_selected, "Область материала")
+                return
+            if isinstance(self.current_selected, FieldPortItem):
+                if self.name_input is not None:
+                    self.scene.rename_port(self.current_selected, self.name_input.text())
+                base = {
+                    "width_px": 90.0,
+                    "height_px": 18.0,
+                    "rotation_deg": 0.0,
+                    "source_kind": "voltage",
+                    "waveform": "sine",
+                    "amplitude_v": 5.0,
+                    "amplitude_a": 0.2,
+                    "frequency_hz": 1.0e6,
+                    "phase_rad": 0.0,
+                    "impedance_ohm": 50.0,
+                }
+                updated = {}
+                for key, widget in self.property_inputs.items():
+                    updated[key] = self._coerce_value(widget.text(), base.get(key, self.current_selected.params.get(key, "")))
+                self.current_selected.apply_params(updated)
+                self.statusBar().showMessage(f"Параметры порта обновлены: {self.current_selected.name}.")
+                self._show_field_object_properties(self.current_selected, "Полевой порт")
+                return
             if self.name_input is not None:
                 self.scene.rename_component(self.current_selected, self.name_input.text())
             if self.rotation_input is not None:
@@ -484,6 +592,22 @@ class MainWindow(QMainWindow):
             raise ValueError("Длительность и шаг dt должны быть положительными.")
         return duration, dt
 
+    def _sync_animation_button(self) -> None:
+        if self.animation_toggle_button is None:
+            return
+        if self.scene.animation_result is None or len(self.scene.animation_result.time_s) <= 1:
+            self.animation_toggle_button.setText("Пауза")
+            return
+        self.animation_toggle_button.setText("Пауза" if self.scene.animation_timer.isActive() else "Продолжить")
+
+    def _toggle_animation(self) -> None:
+        active = self.scene.toggle_animation()
+        self._sync_animation_button()
+        if self.scene.animation_result is None:
+            self.statusBar().showMessage("Анимация еще не рассчитана.")
+            return
+        self.statusBar().showMessage("Анимация идет." if active else "Анимация поставлена на паузу.")
+
     def _save_project(self) -> None:
         try:
             duration, dt = self._parse_simulation_settings()
@@ -505,6 +629,7 @@ class MainWindow(QMainWindow):
             self.duration_input.setText(f"{project.settings.duration_s:g}")
             self.dt_input.setText(f"{project.settings.dt_s:g}")
             self.scene.load_project(project)
+            self._sync_animation_button()
             self.statusBar().showMessage(f"Проект загружен: {path}")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка загрузки", str(exc))
@@ -521,8 +646,9 @@ class MainWindow(QMainWindow):
             self.last_fdtd_sequence = None
             self.last_maxwell_sequence = None
             self.scene.play_result(result)
+            self._sync_animation_button()
             self._write_log(result)
-            self.statusBar().showMessage("Симуляция завершена. Анимация запущена.")
+            self.statusBar().showMessage("Симуляция завершена. Анимация запущена и будет повторяться по кругу.")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка симуляции", str(exc))
 
@@ -533,6 +659,7 @@ class MainWindow(QMainWindow):
             self.last_circuit = project.to_circuit()
             self.last_result = self.last_circuit.simulate(duration, dt)
             self.scene.play_result(self.last_result)
+            self._sync_animation_button()
             self._write_log(self.last_result)
             self.last_field_snapshot = solve_quasi_static_field(self.last_circuit, self.last_result)
             dialog = FieldPreviewDialog(self.last_field_snapshot, self)
@@ -548,6 +675,7 @@ class MainWindow(QMainWindow):
             self.last_circuit = project.to_circuit()
             self.last_result = self.last_circuit.simulate(duration, dt)
             self.scene.play_result(self.last_result)
+            self._sync_animation_button()
             self._write_log(self.last_result)
             self.last_fdtd_sequence = simulate_fdtd_wave(self.last_circuit, self.last_result)
             dialog = FieldPreviewDialog(self.last_fdtd_sequence, self)
@@ -556,20 +684,37 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка FDTD", str(exc))
 
-    def _show_maxwell_wave(self) -> None:
+    def _show_maxwell_tmz_wave(self) -> None:
         try:
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
             self.last_circuit = project.to_circuit()
             self.last_result = self.last_circuit.simulate(duration, dt)
             self.scene.play_result(self.last_result)
+            self._sync_animation_button()
             self._write_log(self.last_result)
-            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result)
+            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result, mode="tmz")
             dialog = FieldPreviewDialog(self.last_maxwell_sequence, self)
             dialog.exec()
-            self.statusBar().showMessage("Maxwell 2D рассчитан.")
+            self.statusBar().showMessage("Maxwell TMz рассчитан.")
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Ошибка Maxwell 2D", str(exc))
+            QMessageBox.critical(self, "Ошибка Maxwell TMz", str(exc))
+
+    def _show_maxwell_tez_wave(self) -> None:
+        try:
+            duration, dt = self._parse_simulation_settings()
+            project = self.scene.build_project("Схема на холсте", duration, dt)
+            self.last_circuit = project.to_circuit()
+            self.last_result = self.last_circuit.simulate(duration, dt)
+            self.scene.play_result(self.last_result)
+            self._sync_animation_button()
+            self._write_log(self.last_result)
+            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result, mode="tez")
+            dialog = FieldPreviewDialog(self.last_maxwell_sequence, self)
+            dialog.exec()
+            self.statusBar().showMessage("Maxwell TEz рассчитан.")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка Maxwell TEz", str(exc))
 
     def _write_log(self, result) -> None:
         lines = [f"Схема: {result.metadata['name']}", f"Длительность: {result.metadata['duration_s']:.6f} с", "", "Узлы:"]

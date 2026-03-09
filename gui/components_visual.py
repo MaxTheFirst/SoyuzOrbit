@@ -16,6 +16,17 @@ except Exception:  # noqa: BLE001
     QPixmap = None
 
 
+COLOR_ALIASES = {
+    "amber": "#ffbf00",
+    "warm_white": "#fff4c2",
+    "cool_white": "#dbeafe",
+    "infrared": "#b91c1c",
+    "uv": "#7c3aed",
+    "violet": "#7c3aed",
+    "lime": "#84cc16",
+}
+
+
 @dataclass(frozen=True)
 class VisualTemplate:
     kind: str
@@ -32,12 +43,16 @@ TEMPLATES: dict[str, VisualTemplate] = {
     "Junction": VisualTemplate("Junction", "Точка", "Junction", (28, 28), ((0.5, 0.5),), COMPONENT_TERMINALS["Junction"], {}),
     "Battery": VisualTemplate("Battery", "Батарея", "Battery", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Battery"], COMPONENT_LIBRARY["Battery"][1].copy()),
     "AC Generator": VisualTemplate("AC Generator", "Генератор AC", "AC Generator", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["AC Generator"], COMPONENT_LIBRARY["AC Generator"][1].copy()),
+    "Pulse Generator": VisualTemplate("Pulse Generator", "Импульсный генератор", "Pulse Generator", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Pulse Generator"], COMPONENT_LIBRARY["Pulse Generator"][1].copy()),
     "Resistor": VisualTemplate("Resistor", "Резистор", "Resistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Resistor"], COMPONENT_LIBRARY["Resistor"][1].copy()),
+    "Thermistor": VisualTemplate("Thermistor", "Термистор", "Thermistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Thermistor"], COMPONENT_LIBRARY["Thermistor"][1].copy()),
+    "Photoresistor": VisualTemplate("Photoresistor", "Фоторезистор", "Photoresistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Photoresistor"], COMPONENT_LIBRARY["Photoresistor"][1].copy()),
     "Capacitor": VisualTemplate("Capacitor", "Конденсатор", "Capacitor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Capacitor"], COMPONENT_LIBRARY["Capacitor"][1].copy()),
     "Inductor": VisualTemplate("Inductor", "Катушка", "Inductor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Inductor"], COMPONENT_LIBRARY["Inductor"][1].copy()),
     "Wire": VisualTemplate("Wire", "Физический провод", "Wire", (128, 44), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Wire"], COMPONENT_LIBRARY["Wire"][1].copy()),
     "Diode": VisualTemplate("Diode", "Диод", "Diode", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Diode"], COMPONENT_LIBRARY["Diode"][1].copy()),
     "LED": VisualTemplate("LED", "Светодиод", "LED", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["LED"], COMPONENT_LIBRARY["LED"][1].copy()),
+    "Varistor": VisualTemplate("Varistor", "Варистор", "Varistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Varistor"], COMPONENT_LIBRARY["Varistor"][1].copy()),
     "Fuse": VisualTemplate("Fuse", "Предохранитель", "Fuse", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Fuse"], COMPONENT_LIBRARY["Fuse"][1].copy()),
     "Bulb": VisualTemplate("Bulb", "Лампочка", "Bulb", (128, 92), ((0.1, 0.82), (0.9, 0.82)), COMPONENT_TERMINALS["Bulb"], COMPONENT_LIBRARY["Bulb"][1].copy()),
     "Ammeter": VisualTemplate("Ammeter", "Амперметр", "Ammeter", (128, 92), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Ammeter"], COMPONENT_LIBRARY["Ammeter"][1].copy()),
@@ -72,7 +87,14 @@ def default_visual_state(kind: str) -> dict[str, Any]:
 
 
 def _rgba(color: str | tuple[int, int, int], alpha: int = 255) -> tuple[int, int, int, int]:
-    rgb = ImageColor.getrgb(color) if isinstance(color, str) else color
+    if isinstance(color, str):
+        normalized = COLOR_ALIASES.get(color.strip().lower(), color)
+        try:
+            rgb = ImageColor.getrgb(normalized)
+        except ValueError:
+            rgb = ImageColor.getrgb("#ff0000")
+    else:
+        rgb = color
     return rgb[0], rgb[1], rgb[2], alpha
 
 
@@ -144,6 +166,25 @@ def _render_generator(template: VisualTemplate, state: dict[str, Any]) -> Image.
     return image
 
 
+def _render_pulse_generator(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    draw.line((12, h / 2, 28, h / 2), fill="#6a6f73", width=4)
+    draw.line((w - 28, h / 2, w - 12, h / 2), fill="#6a6f73", width=4)
+    draw.rounded_rectangle((30, 16, w - 30, h - 16), radius=14, fill="#e6f7ef", outline="#146c43", width=3)
+    pulse_points = [
+        (40, h / 2 + 10),
+        (52, h / 2 + 10),
+        (52, h / 2 - 12),
+        (80, h / 2 - 12),
+        (80, h / 2 + 10),
+        (100, h / 2 + 10),
+    ]
+    draw.line(pulse_points, fill="#15803d", width=4)
+    return image
+
+
 def _render_resistor(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
     image = _base_canvas(template, state)
     draw = ImageDraw.Draw(image)
@@ -155,6 +196,31 @@ def _render_resistor(template: VisualTemplate, state: dict[str, Any]) -> Image.I
     for idx, color in enumerate(("#7c2d12", "#c2410c", "#111827", "#7a5b2a")):
         x = 42 + idx * 18
         draw.rectangle((x, 24, x + 8, h - 24), fill=color)
+    return image
+
+
+def _render_thermistor(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _render_resistor(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    draw.line((48, h - 18, 78, 18), fill="#0f766e", width=3)
+    draw.text((80, 18), "NTC", fill="#0f766e")
+    return image
+
+
+def _render_photoresistor(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    cy = h / 2
+    draw.line((12, cy, 28, cy), fill="#91714f", width=4)
+    draw.line((w - 28, cy, w - 12, cy), fill="#91714f", width=4)
+    draw.ellipse((30, 14, w - 30, h - 14), fill=_rgba("#f8fafc", 180), outline="#64748b", width=2)
+    draw.rounded_rectangle((42, 22, w - 42, h - 22), radius=16, fill="#e9d7b8", outline="#7d5f34", width=2)
+    draw.line((50, 14, 62, 26), fill="#f59e0b", width=3)
+    draw.line((66, 10, 78, 22), fill="#f59e0b", width=3)
+    draw.polygon(((62, 26), (58, 24), (60, 30)), fill="#f59e0b")
+    draw.polygon(((78, 22), (74, 20), (76, 26)), fill="#f59e0b")
     return image
 
 
@@ -213,6 +279,18 @@ def _render_diode(template: VisualTemplate, state: dict[str, Any]) -> Image.Imag
     draw.line((w - 36, cy, w - 12, cy), fill="#7b5f49", width=4)
     draw.polygon(((40, 18), (40, h - 18), (78, cy)), fill="#7b8ca1", outline="#344257")
     draw.line((88, 18, 88, h - 18), fill="#344257", width=5)
+    return image
+
+
+def _render_varistor(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    cy = h / 2
+    draw.line((12, cy, 34, cy), fill="#7b5f49", width=4)
+    draw.line((w - 34, cy, w - 12, cy), fill="#7b5f49", width=4)
+    draw.ellipse((42, 16, w - 42, h - 16), fill="#60a5fa", outline="#1d4ed8", width=3)
+    draw.text((w / 2 - 16, h / 2 - 8), "MOV", fill="#0f172a")
     return image
 
 
@@ -356,12 +434,16 @@ RENDERERS = {
     "Junction": _render_junction,
     "Battery": _render_battery,
     "AC Generator": _render_generator,
+    "Pulse Generator": _render_pulse_generator,
     "Resistor": _render_resistor,
+    "Thermistor": _render_thermistor,
+    "Photoresistor": _render_photoresistor,
     "Capacitor": _render_capacitor,
     "Inductor": _render_inductor,
     "Wire": _render_wire,
     "Diode": _render_diode,
     "LED": _render_led,
+    "Varistor": _render_varistor,
     "Fuse": _render_fuse,
     "Bulb": _render_bulb,
     "Ammeter": _render_ammeter,

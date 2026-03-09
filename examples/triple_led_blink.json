@@ -1,0 +1,420 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 160.0,
+      "y": 430.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Pulse Generator",
+      "name": "PULSE_R",
+      "params": {
+        "duty_cycle": 0.05,
+        "fall_time_s": 0.03,
+        "high_voltage_v": 5.0,
+        "internal_resistance_ohm": 2.5,
+        "low_voltage_v": 0.0,
+        "period_s": 5.0,
+        "pulse_width_s": 0.25,
+        "rise_time_s": 0.03
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 140.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 3,
+      "kind": "Resistor",
+      "name": "R_RED",
+      "params": {
+        "resistance_ohm": 330.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 360.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 4,
+      "kind": "LED",
+      "name": "LED_RED",
+      "params": {
+        "color": "red",
+        "max_forward_current_a": 0.02
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 560.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Pulse Generator",
+      "name": "PULSE_G",
+      "params": {
+        "duty_cycle": 0.08333333333333333,
+        "fall_time_s": 0.03,
+        "high_voltage_v": 5.0,
+        "internal_resistance_ohm": 2.5,
+        "low_voltage_v": 0.0,
+        "period_s": 3.0,
+        "pulse_width_s": 0.25,
+        "rise_time_s": 0.03
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 140.0,
+      "y": 240.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Resistor",
+      "name": "R_GREEN",
+      "params": {
+        "resistance_ohm": 330.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 360.0,
+      "y": 240.0
+    },
+    {
+      "component_id": 7,
+      "kind": "LED",
+      "name": "LED_GREEN",
+      "params": {
+        "color": "green",
+        "max_forward_current_a": 0.025
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 560.0,
+      "y": 240.0
+    },
+    {
+      "component_id": 8,
+      "kind": "Pulse Generator",
+      "name": "PULSE_B",
+      "params": {
+        "duty_cycle": 0.125,
+        "fall_time_s": 0.03,
+        "high_voltage_v": 5.0,
+        "internal_resistance_ohm": 2.5,
+        "low_voltage_v": 0.0,
+        "period_s": 2.0,
+        "pulse_width_s": 0.25,
+        "rise_time_s": 0.03
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 140.0,
+      "y": 360.0
+    },
+    {
+      "component_id": 9,
+      "kind": "Resistor",
+      "name": "R_BLUE",
+      "params": {
+        "resistance_ohm": 360.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 360.0,
+      "y": 360.0
+    },
+    {
+      "component_id": 10,
+      "kind": "LED",
+      "name": "LED_BLUE",
+      "params": {
+        "color": "blue",
+        "max_forward_current_a": 0.02
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 560.0,
+      "y": 360.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "\u0422\u0440\u0438 LED \u0441 \u0440\u0430\u0437\u043d\u044b\u043c\u0438 \u043f\u0435\u0440\u0438\u043e\u0434\u0430\u043c\u0438",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 0.01,
+    "duration_s": 12.0
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 4
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 5
+    },
+    {
+      "a": {
+        "component_id": 6,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 7,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 6
+    },
+    {
+      "a": {
+        "component_id": 7,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 7
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 8
+    },
+    {
+      "a": {
+        "component_id": 8,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 9,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 9
+    },
+    {
+      "a": {
+        "component_id": 9,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 10,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 10
+    },
+    {
+      "a": {
+        "component_id": 10,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 11
+    },
+    {
+      "a": {
+        "component_id": 8,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 12
+    }
+  ]
+}

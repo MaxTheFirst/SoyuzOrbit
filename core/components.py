@@ -88,6 +88,105 @@ class RealResistor(TwoTerminalComponent):
         return data
 
 
+class Thermistor(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        resistance_at_25c_ohm: float = 10000.0,
+        beta_k: float = 3950.0,
+        series_resistance_ohm: float = 0.0,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        self.resistance_at_25c_ohm = max(resistance_at_25c_ohm, 1.0e-3)
+        self.beta_k = max(beta_k, 10.0)
+        self.series_resistance_ohm = max(series_resistance_ohm, 0.0)
+        self.heat_capacity_j_per_k = 2.8
+        self.thermal_resistance_k_per_w = 26.0
+        self.contact_thermal_resistance_k_per_w = 110.0
+        self.calibrate_thermal_network(case_fraction=0.54, junction_fraction=0.34)
+
+    def effective_resistance(self) -> float:
+        temp_k = celsius_to_kelvin(self.temperature_c)
+        reference_k = celsius_to_kelvin(25.0)
+        beta_term = self.beta_k * (1.0 / max(temp_k, 1.0) - 1.0 / reference_k)
+        core_resistance = self.resistance_at_25c_ohm * math.exp(beta_term)
+        return max(core_resistance + self.series_resistance_ohm, 1.0e-3)
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del time_s, dt_s
+        conductance = 1.0 / self.effective_resistance()
+        return conductance * voltage_v, conductance
+
+    def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
+        super().commit(terminal_voltages, time_s, dt_s)
+        self.integrate_temperature(self.last_current_a * self.last_current_a * self.effective_resistance(), dt_s)
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update(
+            {
+                "resistance_ohm": float(self.effective_resistance()),
+                "beta_k": float(self.beta_k),
+            }
+        )
+        return data
+
+
+class Photoresistor(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        dark_resistance_ohm: float = 2.0e6,
+        light_resistance_ohm: float = 350.0,
+        illumination_lux: float = 120.0,
+        lux_reference: float = 100.0,
+        gamma: float = 0.78,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        self.dark_resistance_ohm = max(dark_resistance_ohm, 1.0)
+        self.light_resistance_ohm = max(light_resistance_ohm, 1.0e-3)
+        self.illumination_lux = max(illumination_lux, 0.0)
+        self.lux_reference = max(lux_reference, 1.0e-6)
+        self.gamma = max(gamma, 0.05)
+        self.heat_capacity_j_per_k = 3.2
+        self.thermal_resistance_k_per_w = 28.0
+        self.contact_thermal_resistance_k_per_w = 120.0
+        self.calibrate_thermal_network(case_fraction=0.59, junction_fraction=0.27)
+
+    def effective_resistance(self) -> float:
+        illumination_ratio = max(self.illumination_lux / self.lux_reference, 0.0)
+        photo_factor = 1.0 / (1.0 + illumination_ratio ** self.gamma)
+        temperature_factor = 1.0 - 0.0015 * (self.temperature_c - self.reference_temperature_c)
+        temperature_factor = max(temperature_factor, 0.15)
+        base_resistance = self.light_resistance_ohm + (self.dark_resistance_ohm - self.light_resistance_ohm) * photo_factor
+        return max(base_resistance * temperature_factor, self.light_resistance_ohm * 0.5)
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del time_s, dt_s
+        conductance = 1.0 / self.effective_resistance()
+        return conductance * voltage_v, conductance
+
+    def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
+        super().commit(terminal_voltages, time_s, dt_s)
+        self.integrate_temperature(self.last_current_a * self.last_current_a * self.effective_resistance(), dt_s)
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update(
+            {
+                "resistance_ohm": float(self.effective_resistance()),
+                "illumination_lux": float(self.illumination_lux),
+            }
+        )
+        return data
+
+
 class RealCapacitor(TwoTerminalComponent):
     def __init__(
         self,
@@ -449,6 +548,78 @@ class RealACGenerator(TwoTerminalComponent):
         return data
 
 
+class PulseGenerator(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        high_voltage_v: float = 5.0,
+        low_voltage_v: float = 0.0,
+        period_s: float = 1.0,
+        duty_cycle: float = 0.5,
+        pulse_width_s: float | None = None,
+        rise_time_s: float = 1.0e-3,
+        fall_time_s: float = 1.0e-3,
+        internal_resistance_ohm: float = 0.8,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        self.high_voltage_v = high_voltage_v
+        self.low_voltage_v = low_voltage_v
+        self.period_s = max(period_s, 1.0e-6)
+        self.duty_cycle = clamp(duty_cycle, 0.0, 1.0)
+        self.pulse_width_s = None if pulse_width_s is None else max(min(pulse_width_s, self.period_s), 0.0)
+        self.rise_time_s = max(rise_time_s, 1.0e-9)
+        self.fall_time_s = max(fall_time_s, 1.0e-9)
+        self.internal_resistance_ohm = max(internal_resistance_ohm, 1.0e-6)
+        self.instantaneous_emf_v = low_voltage_v
+        self.heat_capacity_j_per_k = 6.5
+        self.thermal_resistance_k_per_w = 18.0
+        self.contact_thermal_resistance_k_per_w = 95.0
+        self.calibrate_thermal_network(case_fraction=0.58, junction_fraction=0.22)
+
+    def emf(self, time_s: float) -> float:
+        local_time = time_s % self.period_s
+        on_time = self.period_s * self.duty_cycle if self.pulse_width_s is None else self.pulse_width_s
+        on_time = min(max(on_time, 0.0), self.period_s)
+        level = 0.0
+        if on_time > 0.0:
+            if local_time < min(self.rise_time_s, on_time):
+                ratio = local_time / max(self.rise_time_s, 1.0e-12)
+                level = 0.5 - 0.5 * math.cos(math.pi * clamp(ratio, 0.0, 1.0))
+            elif local_time < max(on_time - self.fall_time_s, self.rise_time_s):
+                level = 1.0
+            elif local_time < on_time:
+                ratio = (local_time - max(on_time - self.fall_time_s, 0.0)) / max(self.fall_time_s, 1.0e-12)
+                level = 0.5 + 0.5 * math.cos(math.pi * clamp(ratio, 0.0, 1.0))
+        return self.low_voltage_v + (self.high_voltage_v - self.low_voltage_v) * level
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del dt_s
+        self.instantaneous_emf_v = self.emf(time_s)
+        conductance = 1.0 / self.internal_resistance_ohm
+        current = conductance * voltage_v - conductance * self.instantaneous_emf_v
+        return current, conductance
+
+    def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
+        super().commit(terminal_voltages, time_s, dt_s)
+        self.integrate_temperature(self.last_current_a * self.last_current_a * self.internal_resistance_ohm, dt_s)
+
+    def observe(self) -> dict[str, Any]:
+        effective_pulse_width = self.period_s * self.duty_cycle if self.pulse_width_s is None else self.pulse_width_s
+        data = super().observe()
+        data.update(
+            {
+                "emf_v": float(self.instantaneous_emf_v),
+                "period_s": float(self.period_s),
+                "duty_cycle": float(self.duty_cycle),
+                "pulse_width_s": float(effective_pulse_width),
+            }
+        )
+        return data
+
+
 class SchockleyDiode(TwoTerminalComponent):
     def __init__(
         self,
@@ -673,6 +844,62 @@ class LED_ImageActive(SchockleyDiode):
                 "failed": float(self.failed),
                 "flash": float(self.flash),
                 "color": self.color,
+            }
+        )
+        return data
+
+
+class Varistor(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        clamp_voltage_v: float = 18.0,
+        dynamic_resistance_ohm: float = 1.5,
+        leakage_current_a: float = 2.0e-6,
+        nonlinear_exponent: float = 6.0,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        self.clamp_voltage_v = max(clamp_voltage_v, 1.0e-3)
+        self.dynamic_resistance_ohm = max(dynamic_resistance_ohm, 1.0e-6)
+        self.leakage_current_a = max(leakage_current_a, 0.0)
+        self.nonlinear_exponent = max(nonlinear_exponent, 1.0)
+        self.clamping_active = False
+        self.heat_capacity_j_per_k = 7.0
+        self.thermal_resistance_k_per_w = 15.0
+        self.contact_thermal_resistance_k_per_w = 88.0
+        self.calibrate_thermal_network(case_fraction=0.61, junction_fraction=0.29)
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del time_s, dt_s
+        sign = 1.0 if voltage_v >= 0.0 else -1.0
+        abs_voltage = abs(voltage_v)
+        leakage_g = self.leakage_current_a / self.clamp_voltage_v if self.clamp_voltage_v > 0.0 else GMIN
+        current = leakage_g * voltage_v
+        conductance = leakage_g
+        self.clamping_active = abs_voltage > self.clamp_voltage_v
+        if self.clamping_active:
+            excess = abs_voltage - self.clamp_voltage_v
+            ratio = excess / self.clamp_voltage_v
+            boost = 1.0 + ratio ** self.nonlinear_exponent
+            current = sign * (self.leakage_current_a + excess * boost / self.dynamic_resistance_ohm)
+            conductance = leakage_g + (
+                boost + self.nonlinear_exponent * excess * max(ratio, 0.0) ** max(self.nonlinear_exponent - 1.0, 0.0) / self.clamp_voltage_v
+            ) / self.dynamic_resistance_ohm
+        return current, max(conductance, GMIN)
+
+    def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
+        super().commit(terminal_voltages, time_s, dt_s)
+        self.integrate_temperature(abs(self.last_power_w), dt_s)
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update(
+            {
+                "clamp_voltage_v": float(self.clamp_voltage_v),
+                "clamping_active": float(self.clamping_active),
             }
         )
         return data
@@ -1245,7 +1472,31 @@ class ToggleSwitch(TwoTerminalComponent):
 COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
     "Battery": (PhysiBattery, {"nominal_voltage_v": 9.0, "capacity_mah": 550.0, "chemistry": "alkaline", "internal_resistance_ohm": 1.2}),
     "AC Generator": (RealACGenerator, {"amplitude_v": 5.0, "frequency_hz": 1000.0, "internal_resistance_ohm": 0.5}),
+    "Pulse Generator": (
+        PulseGenerator,
+        {
+            "high_voltage_v": 5.0,
+            "low_voltage_v": 0.0,
+            "period_s": 1.0,
+            "duty_cycle": 0.5,
+            "pulse_width_s": 0.2,
+            "rise_time_s": 1.0e-3,
+            "fall_time_s": 1.0e-3,
+            "internal_resistance_ohm": 0.8,
+        },
+    ),
     "Resistor": (RealResistor, {"resistance_ohm": 220.0}),
+    "Thermistor": (Thermistor, {"resistance_at_25c_ohm": 10000.0, "beta_k": 3950.0}),
+    "Photoresistor": (
+        Photoresistor,
+        {
+            "dark_resistance_ohm": 2.0e6,
+            "light_resistance_ohm": 350.0,
+            "illumination_lux": 120.0,
+            "lux_reference": 100.0,
+            "gamma": 0.78,
+        },
+    ),
     "Capacitor": (RealCapacitor, {"capacitance_f": 100e-6, "max_voltage_v": 16.0}),
     "Inductor": (RealInductor, {"inductance_h": 220e-6, "dc_resistance_ohm": 0.2}),
     "Wire": (
@@ -1279,6 +1530,7 @@ COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
         },
     ),
     "LED": (LED_ImageActive, {"color": "red", "max_forward_current_a": 0.02}),
+    "Varistor": (Varistor, {"clamp_voltage_v": 18.0, "dynamic_resistance_ohm": 1.5, "leakage_current_a": 2.0e-6, "nonlinear_exponent": 6.0}),
     "MOSFET": (
         MOSFET_Model,
         {
@@ -1318,12 +1570,16 @@ COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
 COMPONENT_TERMINALS: dict[str, tuple[str, ...]] = {
     "Battery": ("positive", "negative"),
     "AC Generator": ("positive", "negative"),
+    "Pulse Generator": ("positive", "negative"),
     "Resistor": ("positive", "negative"),
+    "Thermistor": ("positive", "negative"),
+    "Photoresistor": ("positive", "negative"),
     "Capacitor": ("positive", "negative"),
     "Inductor": ("positive", "negative"),
     "Wire": ("positive", "negative"),
     "Diode": ("positive", "negative"),
     "LED": ("positive", "negative"),
+    "Varistor": ("positive", "negative"),
     "MOSFET": ("drain", "gate", "source"),
     "OpAmp": ("plus", "minus", "out"),
     "Fuse": ("positive", "negative"),

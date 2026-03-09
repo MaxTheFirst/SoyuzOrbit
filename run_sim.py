@@ -89,12 +89,12 @@ def _save_fdtd(circuit, result, layer: str, target: str) -> None:
     )
 
 
-def _save_maxwell(circuit, result, layer: str, target: str) -> None:
-    sequence = simulate_full_wave_maxwell_2d(circuit, result)
+def _save_maxwell(circuit, result, layer: str, target: str, mode: str) -> None:
+    sequence = simulate_full_wave_maxwell_2d(circuit, result, mode=mode)
     frames = [sequence.to_image(layer=layer, frame_index=index, scale=3) for index in range(sequence.frame_count())]
     path = Path(target)
     frames[0].save(path, save_all=True, append_images=frames[1:], duration=70, loop=0)
-    print(f"Saved Maxwell 2D animation to {path} ({layer})")
+    print(f"Saved Maxwell 2D animation to {path} ({layer}, {mode})")
     print(
         f"Maxwell stats: frames={sequence.frame_count()}, "
         f"E_max={float(sequence.electric_frames_v_m.max()):.5g}, "
@@ -174,6 +174,7 @@ def main() -> None:
     parser.add_argument("--save-field", help="Save a quasi-static field map image to a file.")
     parser.add_argument("--save-fdtd", help="Save a simplified FDTD wave animation to a GIF file.")
     parser.add_argument("--save-maxwell", help="Save a 2D full-wave Maxwell animation to a GIF file.")
+    parser.add_argument("--maxwell-mode", choices=("tmz", "tez"), default="tmz", help="Maxwell solver mode.")
     parser.add_argument(
         "--field-layer",
         choices=("potential", "electric", "magnetic"),
@@ -191,7 +192,7 @@ def main() -> None:
     if args.save_fdtd:
         _save_fdtd(circuit, result, args.field_layer, args.save_fdtd)
     if args.save_maxwell:
-        _save_maxwell(circuit, result, args.field_layer, args.save_maxwell)
+        _save_maxwell(circuit, result, args.field_layer, args.save_maxwell, args.maxwell_mode)
 
 
 if __name__ == "__main__":

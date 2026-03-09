@@ -12,7 +12,7 @@ from .engine import Circuit
 GROUND_KIND = "Ground"
 NON_ACTIVE_KINDS = {"Ground", "Junction"}
 GROUND_NAMES = {"0", "gnd", "GND", "ground", "GROUND"}
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 WIRE_KIND = "Wire"
 
 
@@ -44,6 +44,24 @@ class ComponentRecord:
     rotation_deg: float = 0.0
     params: dict[str, Any] = field(default_factory=dict)
     terminal_positions: list[tuple[float, float]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class MaterialRegionRecord:
+    region_id: int
+    name: str
+    x: float
+    y: float
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class FieldPortRecord:
+    port_id: int
+    name: str
+    x: float
+    y: float
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -96,6 +114,8 @@ class CircuitProject:
     settings: ProjectSettings = field(default_factory=ProjectSettings)
     components: list[ComponentRecord] = field(default_factory=list)
     wires: list[WireRecord] = field(default_factory=list)
+    material_regions: list[MaterialRegionRecord] = field(default_factory=list)
+    field_ports: list[FieldPortRecord] = field(default_factory=list)
     schema_version: int = SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -103,6 +123,12 @@ class CircuitProject:
         component_ids = set(component_by_id)
         if len(component_ids) != len(self.components):
             raise ValueError("В проекте обнаружены повторяющиеся идентификаторы компонентов.")
+        material_ids = {region.region_id for region in self.material_regions}
+        if len(material_ids) != len(self.material_regions):
+            raise ValueError("В проекте обнаружены повторяющиеся идентификаторы областей среды.")
+        port_ids = {port.port_id for port in self.field_ports}
+        if len(port_ids) != len(self.field_ports):
+            raise ValueError("В проекте обнаружены повторяющиеся идентификаторы полевых портов.")
         for component in component_by_id.values():
             if component.kind not in COMPONENT_TERMINALS:
                 raise ValueError(f"Неизвестный тип компонента: {component.kind}")
@@ -123,6 +149,8 @@ class CircuitProject:
             "name": self.name,
             "settings": asdict(self.settings),
             "components": [asdict(component) for component in self.components],
+            "material_regions": [asdict(region) for region in self.material_regions],
+            "field_ports": [asdict(port) for port in self.field_ports],
             "wires": [
                 {
                     "wire_id": wire.wire_id,
@@ -157,6 +185,26 @@ class CircuitProject:
             )
             for item in data.get("components", [])
         ]
+        material_regions = [
+            MaterialRegionRecord(
+                region_id=item["region_id"],
+                name=item["name"],
+                x=float(item["x"]),
+                y=float(item["y"]),
+                params=dict(item.get("params", {})),
+            )
+            for item in data.get("material_regions", [])
+        ]
+        field_ports = [
+            FieldPortRecord(
+                port_id=item["port_id"],
+                name=item["name"],
+                x=float(item["x"]),
+                y=float(item["y"]),
+                params=dict(item.get("params", {})),
+            )
+            for item in data.get("field_ports", [])
+        ]
         wires = [
             WireRecord(
                 wire_id=item["wire_id"],
@@ -175,6 +223,8 @@ class CircuitProject:
             settings=settings,
             components=components,
             wires=wires,
+            material_regions=material_regions,
+            field_ports=field_ports,
             schema_version=int(data.get("schema_version", SCHEMA_VERSION)),
         )
         project.validate()
@@ -193,6 +243,22 @@ class CircuitProject:
     def to_circuit(self) -> Circuit:
         self.validate()
         circuit = Circuit(self.name)
+        circuit.field_material_regions = [
+            {
+                "name": region.name,
+                "center_px": (float(region.x), float(region.y)),
+                **dict(region.params),
+            }
+            for region in self.material_regions
+        ]
+        circuit.field_ports = [
+            {
+                "name": port.name,
+                "center_px": (float(port.x), float(port.y)),
+                **dict(port.params),
+            }
+            for port in self.field_ports
+        ]
         pin_nodes: dict[tuple[int, int], str] = {}
         component_centers: dict[int, tuple[float, float]] = {}
         next_node_index = 1

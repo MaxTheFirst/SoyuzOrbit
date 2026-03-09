@@ -1,0 +1,213 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 170.0,
+      "y": 360.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Pulse Generator",
+      "name": "SURGE",
+      "params": {
+        "duty_cycle": 0.12,
+        "fall_time_s": 0.001,
+        "high_voltage_v": 30.0,
+        "internal_resistance_ohm": 0.2,
+        "low_voltage_v": 0.0,
+        "period_s": 1.0,
+        "rise_time_s": 0.001
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 160.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 3,
+      "kind": "Resistor",
+      "name": "R_LIMIT",
+      "params": {
+        "resistance_ohm": 47.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 380.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Varistor",
+      "name": "MOV1",
+      "params": {
+        "clamp_voltage_v": 18.0,
+        "dynamic_resistance_ohm": 1.2,
+        "leakage_current_a": 2e-06,
+        "nonlinear_exponent": 6.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 580.0,
+      "y": 240.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Voltmeter",
+      "name": "VM1",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 760.0,
+      "y": 240.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "\u0418\u043c\u043f\u0443\u043b\u044c\u0441 \u0438 \u0432\u0430\u0440\u0438\u0441\u0442\u043e\u0440",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 0.0005,
+    "duration_s": 2.5
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 4
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 5
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 6
+    }
+  ]
+}

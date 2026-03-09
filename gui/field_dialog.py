@@ -56,7 +56,7 @@ class FieldPreviewDialog(QDialog):
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(720, 520)
-        self.image_label.setStyleSheet("background: #fffaf2; border: 1px solid #cfbfa8; border-radius: 10px;")
+        self.image_label.setStyleSheet("background: #10151b; border: 1px solid #2e3c4a; border-radius: 10px;")
 
         close_button = QPushButton("Закрыть")
         close_button.clicked.connect(self.accept)
@@ -79,6 +79,8 @@ class FieldPreviewDialog(QDialog):
         layout.addWidget(self.info_label)
         layout.addWidget(self.image_label, stretch=1)
 
+        if self.is_sequence:
+            self.layer_combo.setCurrentIndex(1)
         self._refresh_preview()
 
     def _frame_count(self) -> int:
@@ -130,8 +132,13 @@ class FieldPreviewDialog(QDialog):
         self.image_label.setPixmap(scaled)
         info = f"{LAYER_LABELS[layer]} | min={float(values.min()):.5g} | max={float(values.max()):.5g} | "
         info += f"сетка={self.snapshot.metadata['grid_width']}x{self.snapshot.metadata['grid_height']}"
+        if "solver" in self.snapshot.metadata:
+            info += f" | solver={self.snapshot.metadata['solver']}"
         if self.is_sequence and "time_step_s" in self.snapshot.metadata:
             info += f" | dt={float(self.snapshot.metadata['time_step_s']):.3e} c"
+        note = str(self.snapshot.metadata.get("note", "")).strip()
+        if note:
+            info += f" | {note}"
         self.info_label.setText(info)
 
     def resizeEvent(self, event) -> None:  # noqa: N802

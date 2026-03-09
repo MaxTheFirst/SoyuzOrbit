@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import math
 from collections import defaultdict
@@ -352,12 +353,28 @@ class Circuit:
                 return float(sum(values) / len(values))
         return float(sum(values) / len(values))
 
-    def simulate(
+    def _supports_adaptive_retry(self) -> bool:
+        for component in self.components:
+            if hasattr(component, "rise_time_s") or hasattr(component, "fall_time_s"):
+                return True
+            if component.__class__.__name__ in {"PulseGenerator", "RealACGenerator", "SchockleyDiode", "LED_ImageActive", "Varistor", "MOSFET_Model"}:
+                return True
+        return False
+
+    def _snapshot_component_states(self) -> list[dict[str, Any]]:
+        return [copy.deepcopy(component.__dict__) for component in self.components]
+
+    def _restore_component_states(self, states: list[dict[str, Any]]) -> None:
+        for component, state in zip(self.components, states, strict=False):
+            component.__dict__.clear()
+            component.__dict__.update(copy.deepcopy(state))
+
+    def _simulate_once(
         self,
         duration_s: float,
         dt_s: float,
-        max_iters: int = 40,
-        tol: float = 1.0e-6,
+        max_iters: int,
+        tol: float,
     ) -> SimulationResult:
         order = self.node_order()
         steps = max(1, int(round(duration_s / dt_s)))
@@ -372,15 +389,22 @@ class Circuit:
         component_history: dict[str, defaultdict[str, list[float]]] = {
             group_name: defaultdict(list) for group_name in grouped_components
         }
+        adaptive_substeps_used = False
 
         for index, time_s in enumerate(time_points):
-            solution = self._solve_step(solution, order, time_s, dt_s, max_iters=max_iters, tol=tol, electromagnetic_links=electromagnetic_links)
+            solution, adaptive_substeps = self._advance_step(
+                solution,
+                order,
+                time_s,
+                dt_s,
+                max_iters=max_iters,
+                tol=tol,
+                electromagnetic_links=electromagnetic_links,
+                thermal_links=thermal_links,
+            )
+            adaptive_substeps_used = adaptive_substeps_used or adaptive_substeps
             for node_idx, node in enumerate(order):
                 node_history[node][index] = solution[node_idx]
-            for component in self.components:
-                voltages = self._terminal_voltages(solution, order, component)
-                component.commit(voltages, time_s, dt_s)
-            self._apply_thermal_coupling(dt_s, thermal_links)
             grouped_observables: dict[str, defaultdict[str, list[float]]] = {
                 group_name: defaultdict(list) for group_name in grouped_components
             }
@@ -406,8 +430,106 @@ class Circuit:
             "nodes": order,
             "components": list(grouped_components),
             "electromagnetic_links": len(electromagnetic_links),
+            "adaptive_substeps": adaptive_substeps_used,
         }
         return SimulationResult(time_s=time_points, node_voltages=node_history, component_observables=finalized_component_history, metadata=metadata)
+
+    def _advance_step(
+        self,
+        solution: np.ndarray,
+        order: list[str],
+        time_s: float,
+        dt_s: float,
+        *,
+        max_iters: int,
+        tol: float,
+        electromagnetic_links: list[ElectromagneticLink] | None,
+        thermal_links: list[tuple[int, int, float]],
+        depth: int = 0,
+        max_depth: int = 5,
+        min_dt_s: float = 1.0e-5,
+    ) -> tuple[np.ndarray, bool]:
+        saved_states = self._snapshot_component_states()
+        base_solution = solution.copy()
+        try:
+            advanced_solution = self._solve_step(
+                solution,
+                order,
+                time_s,
+                dt_s,
+                max_iters=max_iters,
+                tol=tol,
+                electromagnetic_links=electromagnetic_links,
+            )
+            for component in self.components:
+                voltages = self._terminal_voltages(advanced_solution, order, component)
+                component.commit(voltages, time_s, dt_s)
+            self._apply_thermal_coupling(dt_s, thermal_links)
+            return advanced_solution, depth > 0
+        except RuntimeError:
+            self._restore_component_states(saved_states)
+            if depth >= max_depth or dt_s <= min_dt_s or time_s - 0.5 * dt_s < -1.0e-12:
+                raise
+            midpoint_time_s = time_s - 0.5 * dt_s
+            midpoint_solution, _ = self._advance_step(
+                base_solution.copy(),
+                order,
+                midpoint_time_s,
+                dt_s * 0.5,
+                max_iters=max_iters + 10,
+                tol=tol,
+                electromagnetic_links=electromagnetic_links,
+                thermal_links=thermal_links,
+                depth=depth + 1,
+                max_depth=max_depth,
+                min_dt_s=min_dt_s,
+            )
+            try:
+                final_solution, _ = self._advance_step(
+                    midpoint_solution,
+                    order,
+                    time_s,
+                    dt_s * 0.5,
+                    max_iters=max_iters + 10,
+                    tol=tol,
+                    electromagnetic_links=electromagnetic_links,
+                    thermal_links=thermal_links,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    min_dt_s=min_dt_s,
+                )
+            except RuntimeError:
+                self._restore_component_states(saved_states)
+                raise
+            return final_solution, True
+
+    def simulate(
+        self,
+        duration_s: float,
+        dt_s: float,
+        max_iters: int = 40,
+        tol: float = 1.0e-6,
+    ) -> SimulationResult:
+        retry_factors = [1.0]
+        if self._supports_adaptive_retry():
+            retry_factors.extend([0.5, 0.25, 0.125])
+        base_states = self._snapshot_component_states()
+        last_error: Exception | None = None
+        for attempt_index, factor in enumerate(retry_factors):
+            attempt_dt = dt_s * factor
+            try:
+                self._restore_component_states(base_states)
+                result = self._simulate_once(duration_s, attempt_dt, max_iters=max_iters + attempt_index * 20, tol=tol)
+                if attempt_index > 0:
+                    result.metadata["requested_dt_s"] = dt_s
+                    result.metadata["adaptive_retry"] = True
+                    result.metadata["retry_attempt"] = attempt_index
+                return result
+            except RuntimeError as exc:
+                last_error = exc
+                continue
+        assert last_error is not None
+        raise last_error
 
 
 def load_example_module(path_or_module: str) -> Any:

@@ -24,17 +24,40 @@ class FieldSnapshot:
     metadata: dict[str, Any]
 
     def layer(self, name: str) -> np.ndarray:
-        if name == "potential":
+        canonical = _canonical_layer_name(name)
+        if canonical == "potential":
             return self.potential_v
-        if name in {"electric", "e"}:
+        if canonical == "electric":
             return self.electric_field_v_m
-        if name in {"magnetic", "b"}:
+        if canonical == "magnetic":
             return self.magnetic_flux_density_t
         raise ValueError(f"Unknown field layer: {name}")
 
     def to_image(self, layer: str = "potential", scale: int = 3) -> Image.Image:
         values = np.array(self.layer(layer), dtype=float)
-        return _layer_to_image(values, self.conductor_mask, layer=layer, scale=scale)
+        canonical = _canonical_layer_name(layer)
+        return _layer_to_image(
+            values,
+            self.conductor_mask,
+            layer=canonical,
+            scale=scale,
+            scale_ref=self._display_scale(canonical),
+            noise_floor=self._noise_floor(canonical),
+        )
+
+    def _display_scale(self, layer: str) -> float:
+        key = f"render_scale_{layer}"
+        if key not in self.metadata:
+            self.metadata[key] = _estimate_display_scale(self.layer(layer), layer)
+        return float(self.metadata[key])
+
+    def _noise_floor(self, layer: str) -> float:
+        if layer == "potential":
+            return 0.0
+        key = f"render_noise_floor_{layer}"
+        if key not in self.metadata:
+            self.metadata[key] = _estimate_noise_floor(self.layer(layer), layer, self._display_scale(layer))
+        return float(self.metadata[key])
 
 
 @dataclass(slots=True)
@@ -53,41 +76,166 @@ class FieldWaveSequence:
 
     def layer_frame(self, name: str, frame_index: int) -> np.ndarray:
         index = max(0, min(self.frame_count() - 1, int(frame_index)))
-        if name == "potential":
+        canonical = _canonical_layer_name(name)
+        if canonical == "potential":
             return self.potential_v
-        if name in {"electric", "e"}:
+        if canonical == "electric":
             return self.electric_frames_v_m[index]
-        if name in {"magnetic", "b"}:
+        if canonical == "magnetic":
             return self.magnetic_frames_t[index]
         raise ValueError(f"Unknown field layer: {name}")
 
     def to_image(self, layer: str = "electric", frame_index: int = 0, scale: int = 3) -> Image.Image:
         values = np.array(self.layer_frame(layer, frame_index), dtype=float)
-        return _layer_to_image(values, self.conductor_mask, layer=layer, scale=scale)
+        canonical = _canonical_layer_name(layer)
+        return _layer_to_image(
+            values,
+            self.conductor_mask,
+            layer=canonical,
+            scale=scale,
+            scale_ref=self._display_scale(canonical),
+            noise_floor=self._noise_floor(canonical),
+        )
 
+    def _display_scale(self, layer: str) -> float:
+        key = f"render_scale_{layer}"
+        if key not in self.metadata:
+            if layer == "potential":
+                values = self.potential_v
+            elif layer == "electric":
+                values = self.electric_frames_v_m
+            else:
+                values = self.magnetic_frames_t
+            self.metadata[key] = _estimate_display_scale(values, layer)
+        return float(self.metadata[key])
 
-def _layer_to_image(values: np.ndarray, conductor_mask: np.ndarray, *, layer: str, scale: int) -> Image.Image:
-        finite = values[np.isfinite(values)]
-        if finite.size == 0:
-            finite = np.array([0.0], dtype=float)
+    def _noise_floor(self, layer: str) -> float:
         if layer == "potential":
-            span = max(np.percentile(np.abs(finite), 96), 1.0e-9)
-            normalized = np.clip(0.5 + 0.5 * values / span, 0.0, 1.0)
-            image = _gradient_map(normalized, ((0.0, (18, 58, 94)), (0.5, (245, 242, 232)), (1.0, (164, 28, 47))))
-        elif layer in {"electric", "e"}:
-            scale_ref = max(np.percentile(finite, 97), 1.0e-9)
-            normalized = np.clip(np.log1p(values / scale_ref * 4.0) / math.log1p(4.0), 0.0, 1.0)
-            image = _gradient_map(normalized, ((0.0, (11, 30, 53)), (0.45, (43, 108, 176)), (1.0, (250, 204, 21))))
-        else:
-            scale_ref = max(np.percentile(finite, 97), 1.0e-12)
-            normalized = np.clip(np.log1p(values / scale_ref * 5.0) / math.log1p(5.0), 0.0, 1.0)
-            image = _gradient_map(normalized, ((0.0, (18, 18, 18)), (0.45, (153, 27, 27)), (1.0, (251, 191, 36))))
+            return 0.0
+        key = f"render_noise_floor_{layer}"
+        if key not in self.metadata:
+            if layer == "electric":
+                values = self.electric_frames_v_m
+            else:
+                values = self.magnetic_frames_t
+            self.metadata[key] = _estimate_noise_floor(values, layer, self._display_scale(layer))
+        return float(self.metadata[key])
 
-        image[conductor_mask] = np.array([255, 255, 255], dtype=np.uint8)
-        pil = Image.fromarray(image, mode="RGB")
+
+@dataclass(slots=True)
+class _FieldContext:
+    snapshot: FieldSnapshot
+    epsilon_r: np.ndarray
+    sigma_s_per_m: np.ndarray
+    mu_r: np.ndarray
+    ports: list[dict[str, Any]]
+    port_mask: np.ndarray
+    pec_mask: np.ndarray
+    dx_m: float
+    dy_m: float
+    scale_m_per_px: float
+    materials_count: int
+    ports_count: int
+
+
+def _canonical_layer_name(name: str) -> str:
+    lowered = str(name).lower()
+    if lowered == "potential":
+        return "potential"
+    if lowered in {"electric", "e"}:
+        return "electric"
+    if lowered in {"magnetic", "b"}:
+        return "magnetic"
+    raise ValueError(f"Unknown field layer: {name}")
+
+
+def _estimate_display_scale(values: np.ndarray, layer: str) -> float:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return 1.0 if layer == "potential" else 1.0e-12
+    magnitude = np.abs(finite) if layer == "potential" else finite
+    percentile = 96.0 if layer == "potential" else 99.2
+    floor = 1.0e-9 if layer == "potential" else 1.0e-12
+    return max(float(np.percentile(magnitude, percentile)), floor)
+
+
+def _estimate_noise_floor(values: np.ndarray, layer: str, scale_ref: float) -> float:
+    if layer == "potential":
+        return 0.0
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return 0.0
+    baseline = float(np.percentile(finite, 70.0))
+    return min(scale_ref * 0.12, max(baseline, scale_ref * 0.015))
+
+
+def _low_pass_field(values: np.ndarray, conductor_mask: np.ndarray | None = None, *, strength: float = 0.18, passes: int = 1) -> np.ndarray:
+    if strength <= 0.0 or passes <= 0:
+        return np.array(values, dtype=float, copy=True)
+    result = np.array(values, dtype=float, copy=True)
+    if result.ndim != 2 or result.shape[0] < 3 or result.shape[1] < 3:
+        return result
+    if conductor_mask is None:
+        conductor_mask = np.zeros(result.shape, dtype=bool)
+    frozen = conductor_mask.astype(bool)
+    for _ in range(passes):
+        updated = result.copy()
+        interior = result[1:-1, 1:-1]
+        neighbour_average = 0.25 * (
+            result[:-2, 1:-1]
+            + result[2:, 1:-1]
+            + result[1:-1, :-2]
+            + result[1:-1, 2:]
+        )
+        updated[1:-1, 1:-1] = (1.0 - strength) * interior + strength * neighbour_average
+        if np.any(frozen):
+            updated[frozen] = result[frozen]
+        result = updated
+    return result
+
+
+def _layer_to_image(
+    values: np.ndarray,
+    conductor_mask: np.ndarray,
+    *,
+    layer: str,
+    scale: int,
+    scale_ref: float | None = None,
+    noise_floor: float = 0.0,
+) -> Image.Image:
+    display_values = np.array(values, dtype=float, copy=True)
+    if layer != "potential":
+        display_values = _low_pass_field(display_values, conductor_mask, strength=0.18, passes=2)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        finite = np.array([0.0], dtype=float)
+    if layer == "potential":
+        span = max(float(scale_ref if scale_ref is not None else np.percentile(np.abs(finite), 96)), 1.0e-9)
+        normalized = np.clip(0.5 + 0.5 * display_values / span, 0.0, 1.0)
+        image = _gradient_map(normalized, ((0.0, (18, 58, 94)), (0.5, (245, 242, 232)), (1.0, (164, 28, 47))))
+    elif layer in {"electric", "e"}:
+        span = max(float(scale_ref if scale_ref is not None else np.percentile(finite, 97)), 1.0e-9)
+        visible = np.maximum(display_values - noise_floor, 0.0)
+        normalized = np.clip(np.log1p(visible / max(span - noise_floor, 1.0e-18) * 4.0) / math.log1p(4.0), 0.0, 1.0)
+        image = _gradient_map(normalized, ((0.0, (11, 30, 53)), (0.45, (43, 108, 176)), (1.0, (250, 204, 21))))
+    else:
+        span = max(float(scale_ref if scale_ref is not None else np.percentile(finite, 97)), 1.0e-12)
+        visible = np.maximum(display_values - noise_floor, 0.0)
+        normalized = np.clip(np.log1p(visible / max(span - noise_floor, 1.0e-18) * 5.0) / math.log1p(5.0), 0.0, 1.0)
+        image = _gradient_map(normalized, ((0.0, (18, 18, 18)), (0.45, (153, 27, 27)), (1.0, (251, 191, 36))))
+
+    pil = Image.fromarray(image, mode="RGB")
+    if scale > 1:
+        pil = pil.resize((pil.width * scale, pil.height * scale), Image.Resampling.BICUBIC)
+    if np.any(conductor_mask):
+        mask = Image.fromarray((conductor_mask.astype(np.uint8) * 255), mode="L")
         if scale > 1:
-            pil = pil.resize((pil.width * scale, pil.height * scale), Image.Resampling.NEAREST)
-        return pil
+            mask = mask.resize((pil.width, pil.height), Image.Resampling.NEAREST)
+        conductor_overlay = Image.new("RGB", pil.size, (247, 244, 238))
+        pil.paste(conductor_overlay, mask=mask)
+    return pil
 
 
 def _gradient_map(values: np.ndarray, stops: tuple[tuple[float, tuple[int, int, int]], ...]) -> np.ndarray:
@@ -146,6 +294,204 @@ def _sample_segment(start: tuple[float, float], end: tuple[float, float], count:
     return points
 
 
+def _rect_corners(center: tuple[float, float], width: float, height: float, rotation_deg: float) -> list[tuple[float, float]]:
+    half_w = width * 0.5
+    half_h = height * 0.5
+    angle = math.radians(rotation_deg)
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    corners = []
+    for dx, dy in ((-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)):
+        corners.append(
+            (
+                center[0] + dx * cos_a - dy * sin_a,
+                center[1] + dx * sin_a + dy * cos_a,
+            )
+        )
+    return corners
+
+
+def _rect_mask(
+    x_grid_px: np.ndarray,
+    y_grid_px: np.ndarray,
+    center: tuple[float, float],
+    width_px: float,
+    height_px: float,
+    rotation_deg: float = 0.0,
+) -> np.ndarray:
+    angle = math.radians(rotation_deg)
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    dx = x_grid_px - center[0]
+    dy = y_grid_px - center[1]
+    local_x = dx * cos_a + dy * sin_a
+    local_y = -dx * sin_a + dy * cos_a
+    return (np.abs(local_x) <= width_px * 0.5) & (np.abs(local_y) <= height_px * 0.5)
+
+
+def _extract_material_regions(circuit: Circuit) -> list[dict[str, Any]]:
+    regions = []
+    for raw in getattr(circuit, "field_material_regions", []):
+        regions.append(
+            {
+                "name": str(raw.get("name", "Среда")),
+                "center_px": tuple(float(v) for v in raw.get("center_px", (0.0, 0.0))),
+                "width_px": max(float(raw.get("width_px", 220.0)), 2.0),
+                "height_px": max(float(raw.get("height_px", 140.0)), 2.0),
+                "rotation_deg": float(raw.get("rotation_deg", 0.0)),
+                "epsilon_r": max(float(raw.get("epsilon_r", 1.0)), 1.0),
+                "sigma_s_per_m": max(float(raw.get("sigma_s_per_m", 0.0)), 0.0),
+                "mu_r": max(float(raw.get("mu_r", 1.0)), 1.0e-3),
+            }
+        )
+    return regions
+
+
+def _source_component_port(component: Component, result: SimulationResult) -> dict[str, Any] | None:
+    class_name = component.__class__.__name__
+    if class_name not in {"PhysiBattery", "RealACGenerator", "PulseGenerator"}:
+        return None
+    layout_points = [(float(point[0]), float(point[1])) for point in getattr(component, "layout_points_px", [])]
+    if not isinstance(component, TwoTerminalComponent):
+        return None
+    if len(layout_points) >= 2:
+        start = layout_points[0]
+        end = layout_points[-1]
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        distance_px = max(math.hypot(dx, dy), 10.0)
+        center = ((start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5)
+        rotation_deg = math.degrees(math.atan2(dy, dx))
+    else:
+        center = tuple(float(value) for value in getattr(component, "layout_position_px", (0.0, 0.0)))
+        distance_px = 88.0
+        rotation_deg = float(getattr(component, "layout_rotation_deg", 0.0))
+    voltage_v = abs(_node_voltage(result, component.nodes[0]) - _node_voltage(result, component.nodes[1]))
+    if class_name == "RealACGenerator":
+        amplitude_v = max(float(getattr(component, "amplitude_v", voltage_v if voltage_v > 0.0 else 1.0)), 1.0e-6)
+        frequency_hz = max(float(getattr(component, "frequency_hz", 1.0e6)), 1.0)
+        waveform = "sine"
+    elif class_name == "PulseGenerator":
+        high_level_v = float(getattr(component, "high_voltage_v", 5.0))
+        low_level_v = float(getattr(component, "low_voltage_v", 0.0))
+        period_s = max(float(getattr(component, "period_s", 1.0)), 1.0e-12)
+        configured_pulse_width = getattr(component, "pulse_width_s", None)
+        pulse_width_s = period_s * float(getattr(component, "duty_cycle", 0.5)) if configured_pulse_width is None else float(configured_pulse_width)
+        return {
+            "name": f"auto:{component.name}",
+            "center_px": center,
+            "width_px": max(distance_px * 0.86, 24.0),
+            "height_px": 18.0,
+            "rotation_deg": rotation_deg,
+            "origin": "auto:PulseGenerator",
+            "source_kind": "voltage",
+            "waveform": "pulse",
+            "amplitude_v": max(abs(high_level_v - low_level_v), 1.0e-9),
+            "low_level_v": low_level_v,
+            "amplitude_a": max(abs(float(getattr(component, "last_current_a", 0.0))), 0.05),
+            "frequency_hz": 1.0 / period_s,
+            "period_s": period_s,
+            "pulse_width_s": max(min(pulse_width_s, period_s), 0.0),
+            "rise_time_s": max(float(getattr(component, "rise_time_s", 1.0e-9)), 1.0e-12),
+            "fall_time_s": max(float(getattr(component, "fall_time_s", 1.0e-9)), 1.0e-12),
+            "phase_rad": 0.0,
+            "impedance_ohm": max(float(getattr(component, "internal_resistance_ohm", 50.0)), 1.0e-6),
+        }
+    else:
+        amplitude_v = max(voltage_v, float(getattr(component, "nominal_voltage_v", 1.5)))
+        frequency_hz = 0.0
+        waveform = "step"
+    return {
+        "name": f"auto:{component.name}",
+        "center_px": center,
+        "width_px": max(distance_px * 0.78, 18.0),
+        "height_px": 16.0,
+        "rotation_deg": rotation_deg,
+        "origin": f"auto:{class_name}",
+        "source_kind": "voltage",
+        "waveform": waveform,
+        "amplitude_v": amplitude_v,
+        "amplitude_a": max(abs(float(getattr(component, "last_current_a", 0.0))), 0.1),
+        "frequency_hz": frequency_hz,
+        "phase_rad": float(getattr(component, "phase_rad", 0.0)),
+        "impedance_ohm": max(float(getattr(component, "internal_resistance_ohm", 50.0)), 1.0e-6),
+    }
+
+
+def _extract_ports(circuit: Circuit, result: SimulationResult) -> list[dict[str, Any]]:
+    ports: list[dict[str, Any]] = []
+    for raw in getattr(circuit, "field_ports", []):
+        ports.append(
+            {
+                "name": str(raw.get("name", "Порт")),
+                "center_px": tuple(float(v) for v in raw.get("center_px", (0.0, 0.0))),
+                "width_px": max(float(raw.get("width_px", 90.0)), 4.0),
+                "height_px": max(float(raw.get("height_px", 18.0)), 4.0),
+                "rotation_deg": float(raw.get("rotation_deg", 0.0)),
+                "source_kind": str(raw.get("source_kind", "voltage")).lower(),
+                "waveform": str(raw.get("waveform", "sine")).lower(),
+                "amplitude_v": float(raw.get("amplitude_v", 5.0)),
+                "amplitude_a": float(raw.get("amplitude_a", 0.2)),
+                "frequency_hz": max(float(raw.get("frequency_hz", 0.0)), 0.0),
+                "phase_rad": float(raw.get("phase_rad", 0.0)),
+                "impedance_ohm": max(float(raw.get("impedance_ohm", 50.0)), 1.0e-6),
+                "origin": "explicit",
+            }
+        )
+    if ports:
+        return ports
+    for component in circuit.components:
+        port = _source_component_port(component, result)
+        if port is not None:
+            ports.append(port)
+    return ports
+
+
+def _layout_extent_points(circuit: Circuit, materials: list[dict[str, Any]], ports: list[dict[str, Any]]) -> list[tuple[float, float]]:
+    points: list[tuple[float, float]] = []
+    for component in circuit.components:
+        for point in getattr(component, "layout_points_px", []):
+            points.append((float(point[0]), float(point[1])))
+        if getattr(component, "layout_position_px", None) is not None:
+            position = getattr(component, "layout_position_px")
+            points.append((float(position[0]), float(position[1])))
+    for region in materials:
+        points.extend(_rect_corners(region["center_px"], region["width_px"], region["height_px"], region["rotation_deg"]))
+    for port in ports:
+        points.extend(_rect_corners(port["center_px"], port["width_px"], port["height_px"], port["rotation_deg"]))
+    return points
+
+
+def _reference_frequency_hz(ports: list[dict[str, Any]]) -> float:
+    positive = [float(port.get("frequency_hz", 0.0)) for port in ports if float(port.get("frequency_hz", 0.0)) > 0.0]
+    if positive:
+        return max(np.median(np.array(positive, dtype=float)), 1.0)
+    return 1.0e5
+
+
+def _build_material_maps(
+    x_grid_px: np.ndarray,
+    y_grid_px: np.ndarray,
+    materials: list[dict[str, Any]],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    epsilon_r = np.ones_like(x_grid_px, dtype=float)
+    sigma_s = np.zeros_like(x_grid_px, dtype=float)
+    mu_r = np.ones_like(x_grid_px, dtype=float)
+    for region in materials:
+        mask = _rect_mask(
+            x_grid_px,
+            y_grid_px,
+            region["center_px"],
+            region["width_px"],
+            region["height_px"],
+            region["rotation_deg"],
+        )
+        epsilon_r[mask] = float(region["epsilon_r"])
+        sigma_s[mask] = float(region["sigma_s_per_m"])
+        mu_r[mask] = float(region["mu_r"])
+    return epsilon_r, sigma_s, mu_r
+
+
 def solve_quasi_static_field(
     circuit: Circuit,
     result: SimulationResult,
@@ -157,13 +503,9 @@ def solve_quasi_static_field(
     relaxation: float = 0.92,
     conductor_radius_px: float = 7.0,
 ) -> FieldSnapshot:
-    points: list[tuple[float, float]] = []
-    for component in circuit.components:
-        for point in getattr(component, "layout_points_px", []):
-            points.append((float(point[0]), float(point[1])))
-        if getattr(component, "layout_position_px", None) is not None:
-            position = getattr(component, "layout_position_px")
-            points.append((float(position[0]), float(position[1])))
+    materials = _extract_material_regions(circuit)
+    ports = _extract_ports(circuit, result)
+    points = _layout_extent_points(circuit, materials, ports)
     if not points:
         points = [(0.0, 0.0), (400.0, 300.0)]
 
@@ -181,8 +523,12 @@ def solve_quasi_static_field(
         np.median([getattr(component, "geometry_scale_m_per_px", 0.002) for component in circuit.components]) if circuit.components else 0.002
     )
     conductor_radius_cells = max(1, int(round(conductor_radius_px / max((max_x - min_x) / max(grid_width - 1, 1), 1.0))))
-
     current_segments: list[tuple[tuple[float, float], tuple[float, float], float]] = []
+
+    epsilon_r, sigma_s, mu_r = _build_material_maps(xx_px, yy_px, materials)
+    omega_ref = 2.0 * math.pi * _reference_frequency_hz(ports)
+    conductivity_equivalent = np.clip(sigma_s / max(EPSILON_0 * omega_ref, 1.0e-18), 0.0, 2.0e5)
+    relaxation_weight = epsilon_r + conductivity_equivalent
 
     def map_to_grid(point: tuple[float, float]) -> tuple[int, int]:
         x_index = int(round((point[0] - min_x) / max(max_x - min_x, 1.0e-9) * (grid_width - 1)))
@@ -214,9 +560,7 @@ def solve_quasi_static_field(
             _mark_disc(conductor_mask, fixed_values, ix, iy, conductor_radius_cells, average_voltage)
 
     potential = fixed_values.copy()
-    far_field_v = 0.0
-    if np.any(conductor_mask):
-        far_field_v = float(np.mean(fixed_values[conductor_mask]))
+    far_field_v = float(np.mean(fixed_values[conductor_mask])) if np.any(conductor_mask) else 0.0
     potential[~conductor_mask] = far_field_v
     conductor_mask[0, :] = True
     conductor_mask[-1, :] = True
@@ -228,16 +572,22 @@ def solve_quasi_static_field(
     fixed_values[:, -1] = 0.0
     potential[conductor_mask] = fixed_values[conductor_mask]
 
+    weight = relaxation_weight
+    east = 0.5 * (weight[1:-1, 1:-1] + weight[1:-1, 2:])
+    west = 0.5 * (weight[1:-1, 1:-1] + weight[1:-1, :-2])
+    north = 0.5 * (weight[1:-1, 1:-1] + weight[:-2, 1:-1])
+    south = 0.5 * (weight[1:-1, 1:-1] + weight[2:, 1:-1])
+    total = np.maximum(east + west + north + south, 1.0e-12)
     free_mask = ~conductor_mask[1:-1, 1:-1]
     for _ in range(max(iterations, 1)):
-        neighbor_average = 0.25 * (
-            potential[:-2, 1:-1]
-            + potential[2:, 1:-1]
-            + potential[1:-1, :-2]
-            + potential[1:-1, 2:]
-        )
+        weighted_average = (
+            east * potential[1:-1, 2:]
+            + west * potential[1:-1, :-2]
+            + north * potential[:-2, 1:-1]
+            + south * potential[2:, 1:-1]
+        ) / total
         interior = potential[1:-1, 1:-1]
-        interior[free_mask] = (1.0 - relaxation) * interior[free_mask] + relaxation * neighbor_average[free_mask]
+        interior[free_mask] = (1.0 - relaxation) * interior[free_mask] + relaxation * weighted_average[free_mask]
         potential[conductor_mask] = fixed_values[conductor_mask]
 
     dy_m = max((max_y - min_y) * scale_m_per_px / max(grid_height - 1, 1), 1.0e-9)
@@ -260,7 +610,7 @@ def solve_quasi_static_field(
         ry_m = (yy_px - mid_y) * scale_m_per_px
         distance_sq = rx_m * rx_m + ry_m * ry_m + (0.3 * segment_length_m) ** 2
         turn_sign = np.sign(direction_x * ry_m - direction_y * rx_m)
-        magnetic_bz += turn_sign * MU_0 * current_a * segment_length_m / (2.0 * math.pi * distance_sq)
+        magnetic_bz += turn_sign * MU_0 * mu_r * current_a * segment_length_m / (2.0 * math.pi * distance_sq)
     magnetic_flux_density = np.abs(magnetic_bz)
 
     return FieldSnapshot(
@@ -276,8 +626,149 @@ def solve_quasi_static_field(
             "grid_height": int(grid_height),
             "scale_m_per_px": float(scale_m_per_px),
             "iterations": int(iterations),
+            "materials_count": len(materials),
+            "ports_count": len(ports),
+            "reference_frequency_hz": float(_reference_frequency_hz(ports)),
+            "solver": "quasi_static_weighted",
         },
     )
+
+
+def _build_field_context(
+    circuit: Circuit,
+    result: SimulationResult,
+    *,
+    grid_width: int,
+    grid_height: int,
+    padding_px: float,
+    iterations: int,
+) -> _FieldContext:
+    snapshot = solve_quasi_static_field(
+        circuit,
+        result,
+        grid_width=grid_width,
+        grid_height=grid_height,
+        padding_px=padding_px,
+        iterations=iterations,
+    )
+    materials = _extract_material_regions(circuit)
+    ports = _extract_ports(circuit, result)
+    epsilon_r, sigma_s, mu_r = _build_material_maps(snapshot.x_grid_px, snapshot.y_grid_px, materials)
+    port_entries: list[dict[str, Any]] = []
+    port_mask = np.zeros_like(snapshot.conductor_mask, dtype=bool)
+    for port in ports:
+        mask = _rect_mask(
+            snapshot.x_grid_px,
+            snapshot.y_grid_px,
+            port["center_px"],
+            port["width_px"],
+            port["height_px"],
+            port["rotation_deg"],
+        )
+        if not np.any(mask):
+            continue
+        entry = dict(port)
+        entry["mask"] = mask
+        port_entries.append(entry)
+        port_mask |= mask
+    if not port_entries:
+        raise ValueError(
+            "Для Maxwell/FDTD нужен Порт поля или подходящий источник. "
+            "Для медленных схем без полевого порта используй 'Старт' или 'Карта поля'."
+        )
+    pec_mask = snapshot.conductor_mask.copy()
+    for region in materials:
+        if float(region["sigma_s_per_m"]) >= 5.0e5:
+            pec_mask |= _rect_mask(
+                snapshot.x_grid_px,
+                snapshot.y_grid_px,
+                region["center_px"],
+                region["width_px"],
+                region["height_px"],
+                region["rotation_deg"],
+            )
+    if np.any(port_mask):
+        pec_mask &= ~port_mask
+    ny, nx = snapshot.potential_v.shape
+    scale_m_per_px = float(snapshot.metadata.get("scale_m_per_px", 0.002))
+    dx_m = max((snapshot.bounds_px[2] - snapshot.bounds_px[0]) * scale_m_per_px / max(nx - 1, 1), 1.0e-9)
+    dy_m = max((snapshot.bounds_px[3] - snapshot.bounds_px[1]) * scale_m_per_px / max(ny - 1, 1), 1.0e-9)
+    return _FieldContext(
+        snapshot=snapshot,
+        epsilon_r=epsilon_r,
+        sigma_s_per_m=sigma_s,
+        mu_r=mu_r,
+        ports=port_entries,
+        port_mask=port_mask,
+        pec_mask=pec_mask,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        scale_m_per_px=scale_m_per_px,
+        materials_count=len(materials),
+        ports_count=len(port_entries),
+    )
+
+
+def _port_signal(port: dict[str, Any], time_s: float, ramp_s: float) -> float:
+    waveform = str(port.get("waveform", "sine")).lower()
+    source_kind = str(port.get("source_kind", "voltage")).lower()
+    amplitude = float(port.get("amplitude_a", 0.0) if source_kind == "current" else port.get("amplitude_v", 0.0))
+    frequency_hz = max(float(port.get("frequency_hz", 0.0)), 0.0)
+    phase_rad = float(port.get("phase_rad", 0.0))
+    impedance = max(float(port.get("impedance_ohm", 50.0)), 1.0e-6)
+    impedance_scale = math.sqrt(50.0 / impedance)
+    if waveform == "step":
+        base = amplitude * (1.0 - math.exp(-time_s / max(ramp_s, 1.0e-12)))
+    elif waveform == "pulse":
+        period_s = max(float(port.get("period_s", 1.0 / max(frequency_hz, 1.0))), 1.0e-12)
+        pulse_width_s = max(min(float(port.get("pulse_width_s", 0.5 * period_s)), period_s), 0.0)
+        rise_time_s = max(float(port.get("rise_time_s", ramp_s)), 1.0e-12)
+        fall_time_s = max(float(port.get("fall_time_s", ramp_s)), 1.0e-12)
+        low_level = float(port.get("low_level_v", 0.0)) if source_kind == "voltage" else 0.0
+        local_time = time_s % period_s
+        level = 0.0
+        if pulse_width_s > 0.0:
+            if local_time < min(rise_time_s, pulse_width_s):
+                ratio = local_time / rise_time_s
+                level = 0.5 - 0.5 * math.cos(math.pi * min(max(ratio, 0.0), 1.0))
+            elif local_time < max(pulse_width_s - fall_time_s, rise_time_s):
+                level = 1.0
+            elif local_time < pulse_width_s:
+                ratio = (local_time - max(pulse_width_s - fall_time_s, 0.0)) / fall_time_s
+                level = 0.5 + 0.5 * math.cos(math.pi * min(max(ratio, 0.0), 1.0))
+        base = low_level + amplitude * level
+    elif waveform == "gaussian":
+        center = 4.0 * ramp_s
+        width = max(1.5 * ramp_s, 1.0e-12)
+        base = amplitude * math.exp(-((time_s - center) / width) ** 2)
+    else:
+        envelope = 1.0 - math.exp(-time_s / max(ramp_s, 1.0e-12))
+        if frequency_hz <= 0.0:
+            base = amplitude * envelope
+        else:
+            base = amplitude * envelope * math.sin(2.0 * math.pi * frequency_hz * time_s + phase_rad)
+    return base * impedance_scale
+
+
+def _field_mode_note(context: _FieldContext, total_time_s: float) -> str | None:
+    if not context.ports:
+        return None
+    origins = {str(port.get("origin", "")) for port in context.ports}
+    if origins and origins <= {"auto:PulseGenerator"}:
+        slowest_transition = min(
+            max(
+                min(
+                    float(port.get("rise_time_s", 1.0)),
+                    float(port.get("fall_time_s", 1.0)),
+                    max(float(port.get("pulse_width_s", 1.0)), 1.0e-12),
+                ),
+                1.0e-12,
+            )
+            for port in context.ports
+        )
+        if slowest_transition > total_time_s * 1.0e6:
+            return "Низкочастотная схема: Maxwell показывает только сверхбыстрый ЭМ-отклик, не мигание LED."
+    return None
 
 
 def simulate_fdtd_wave(
@@ -292,7 +783,7 @@ def simulate_fdtd_wave(
     source_period_steps: int = 14,
     damping: float = 0.012,
 ) -> FieldWaveSequence:
-    static = solve_quasi_static_field(
+    context = _build_field_context(
         circuit,
         result,
         grid_width=grid_width,
@@ -300,55 +791,55 @@ def simulate_fdtd_wave(
         padding_px=padding_px,
         iterations=iterations,
     )
-    conductor_mask = static.conductor_mask.copy()
-    source_pattern = np.array(static.potential_v, dtype=float)
-    source_scale = max(float(np.max(np.abs(source_pattern[conductor_mask])) if np.any(conductor_mask) else 0.0), 1.0e-9)
-    source_pattern = source_pattern / source_scale
-    if not np.any(np.abs(source_pattern[conductor_mask]) > 1.0e-6):
-        center_y = source_pattern.shape[0] // 2
-        center_x = source_pattern.shape[1] // 2
-        source_pattern[center_y - 1:center_y + 2, center_x - 1:center_x + 2] = 1.0
-
-    scale_m_per_px = float(static.metadata.get("scale_m_per_px", 0.002))
-    dx_m = max((static.bounds_px[2] - static.bounds_px[0]) * scale_m_per_px / max(grid_width - 1, 1), 1.0e-9)
-    dy_m = max((static.bounds_px[3] - static.bounds_px[1]) * scale_m_per_px / max(grid_height - 1, 1), 1.0e-9)
+    static = context.snapshot
+    ny, nx = static.potential_v.shape
     c0 = 1.0 / math.sqrt(EPSILON_0 * MU_0)
-    courant = 0.34
-    dt_s = courant * min(dx_m, dy_m) / c0
-    cx2 = (c0 * dt_s / dx_m) ** 2
-    cy2 = (c0 * dt_s / dy_m) ** 2
-
+    c_map = c0 / np.sqrt(np.maximum(context.epsilon_r * context.mu_r, 1.0e-9))
+    dt_s = 0.34 * min(context.dx_m, context.dy_m) / max(float(np.max(c_map)), 1.0e-9)
+    note = _field_mode_note(context, dt_s * steps)
     prev = np.zeros_like(static.potential_v)
     current = np.zeros_like(static.potential_v)
-    electric_frames = np.zeros((steps, grid_height, grid_width), dtype=float)
-    magnetic_frames = np.zeros((steps, grid_height, grid_width), dtype=float)
-    outer_boundary = np.zeros_like(conductor_mask)
+    electric_frames = np.zeros((steps, ny, nx), dtype=float)
+    magnetic_frames = np.zeros((steps, ny, nx), dtype=float)
+    outer_boundary = np.zeros_like(static.conductor_mask)
     outer_boundary[0, :] = True
     outer_boundary[-1, :] = True
     outer_boundary[:, 0] = True
     outer_boundary[:, -1] = True
+    coeff_x = (c_map[1:-1, 1:-1] * dt_s / context.dx_m) ** 2
+    coeff_y = (c_map[1:-1, 1:-1] * dt_s / context.dy_m) ** 2
+    local_damping = np.clip(
+        damping + context.sigma_s_per_m[1:-1, 1:-1] * dt_s / np.maximum(EPSILON_0 * context.epsilon_r[1:-1, 1:-1], 1.0e-18),
+        0.0,
+        0.42,
+    )
 
     for frame_index in range(steps):
         nxt = current.copy()
         laplacian_x = current[1:-1, 2:] - 2.0 * current[1:-1, 1:-1] + current[1:-1, :-2]
         laplacian_y = current[2:, 1:-1] - 2.0 * current[1:-1, 1:-1] + current[:-2, 1:-1]
         nxt[1:-1, 1:-1] = (
-            (2.0 - damping) * current[1:-1, 1:-1]
-            - (1.0 - damping) * prev[1:-1, 1:-1]
-            + cx2 * laplacian_x
-            + cy2 * laplacian_y
+            (2.0 - local_damping) * current[1:-1, 1:-1]
+            - (1.0 - local_damping) * prev[1:-1, 1:-1]
+            + coeff_x * laplacian_x
+            + coeff_y * laplacian_y
         )
 
-        envelope = math.exp(-((frame_index - 0.28 * steps) / max(0.18 * steps, 1.0)) ** 2)
-        carrier = math.sin(2.0 * math.pi * frame_index / max(source_period_steps, 2))
-        source_drive = envelope * carrier
-        nxt[conductor_mask] = source_pattern[conductor_mask] * source_drive
+        time_s = frame_index * dt_s
+        ramp_s = max(source_period_steps, 2) * dt_s
+        for port in context.ports:
+            drive = _port_signal(port, time_s, ramp_s)
+            mask = port["mask"]
+            if str(port.get("source_kind", "voltage")).lower() == "current":
+                nxt[mask] += drive * dt_s / np.maximum(EPSILON_0 * context.epsilon_r[mask], 1.0e-18)
+            else:
+                nxt[mask] = drive
+        nxt[context.pec_mask] = 0.0
         nxt[outer_boundary] = 0.0
 
-        dphi_dy, dphi_dx = np.gradient(nxt, dy_m, dx_m)
+        dphi_dy, dphi_dx = np.gradient(nxt, context.dy_m, context.dx_m)
         electric_frames[frame_index] = np.hypot(dphi_dx, dphi_dy)
         magnetic_frames[frame_index] = np.abs(nxt - prev) / max(c0 * c0 * dt_s, 1.0e-18)
-
         prev, current = current, nxt
 
     return FieldWaveSequence(
@@ -358,14 +849,211 @@ def simulate_fdtd_wave(
         potential_v=static.potential_v,
         electric_frames_v_m=electric_frames,
         magnetic_frames_t=magnetic_frames,
-        conductor_mask=conductor_mask,
+        conductor_mask=context.pec_mask,
         metadata={
             "grid_width": int(grid_width),
             "grid_height": int(grid_height),
-            "scale_m_per_px": float(scale_m_per_px),
+            "scale_m_per_px": float(context.scale_m_per_px),
             "time_step_s": float(dt_s),
             "steps": int(steps),
             "source_period_steps": int(source_period_steps),
+            "materials_count": int(context.materials_count),
+            "ports_count": int(context.ports_count),
+            "solver": "fdtd_scalar_materials",
+            "note": note,
+        },
+    )
+
+
+def _simulate_tmz(context: _FieldContext, *, steps: int, edge_absorber_cells: int) -> FieldWaveSequence:
+    static = context.snapshot
+    ny, nx = static.potential_v.shape
+    c0 = 1.0 / math.sqrt(EPSILON_0 * MU_0)
+    max_phase_velocity = c0 / math.sqrt(max(float(np.min(context.epsilon_r * context.mu_r)), 1.0e-9))
+    dt_s = 0.57 / (max_phase_velocity * math.sqrt((1.0 / context.dx_m ** 2) + (1.0 / context.dy_m ** 2)))
+    note = _field_mode_note(context, dt_s * steps)
+
+    ez = np.zeros((ny, nx), dtype=float)
+    hx = np.zeros((ny - 1, nx), dtype=float)
+    hy = np.zeros((ny, nx - 1), dtype=float)
+    electric_frames = np.zeros((steps, ny, nx), dtype=float)
+    magnetic_frames = np.zeros((steps, ny, nx), dtype=float)
+
+    absorber_cells = max(edge_absorber_cells, 4)
+    sigma_absorb = np.zeros((ny, nx), dtype=float)
+    sigma_max = 0.9 * EPSILON_0 / max(dt_s, 1.0e-18)
+    for y in range(ny):
+        for x in range(nx):
+            dist = min(x, nx - 1 - x, y, ny - 1 - y)
+            if dist < absorber_cells:
+                ratio = (absorber_cells - dist) / absorber_cells
+                sigma_absorb[y, x] = sigma_max * ratio * ratio
+    sigma_e = context.sigma_s_per_m + sigma_absorb
+    eps = EPSILON_0 * context.epsilon_r
+    mu_hx = MU_0 * 0.5 * (context.mu_r[:-1, :] + context.mu_r[1:, :])
+    mu_hy = MU_0 * 0.5 * (context.mu_r[:, :-1] + context.mu_r[:, 1:])
+    sigma_hx = 0.5 * (sigma_absorb[:-1, :] + sigma_absorb[1:, :])
+    sigma_hy = 0.5 * (sigma_absorb[:, :-1] + sigma_absorb[:, 1:])
+
+    decay_e = (1.0 - sigma_e * dt_s / (2.0 * eps)) / np.maximum(1.0 + sigma_e * dt_s / (2.0 * eps), 1.0e-9)
+    drive_e = dt_s / np.maximum(eps * (1.0 + sigma_e * dt_s / (2.0 * eps)), 1.0e-18)
+    decay_hx = np.exp(-sigma_hx * dt_s / np.maximum(mu_hx, 1.0e-18))
+    decay_hy = np.exp(-sigma_hy * dt_s / np.maximum(mu_hy, 1.0e-18))
+
+    for frame_index in range(steps):
+        hx = decay_hx * (hx - (dt_s / np.maximum(mu_hx, 1.0e-18) / context.dy_m) * (ez[1:, :] - ez[:-1, :]))
+        hy = decay_hy * (hy + (dt_s / np.maximum(mu_hy, 1.0e-18) / context.dx_m) * (ez[:, 1:] - ez[:, :-1]))
+
+        curl_h = (
+            (hy[1:-1, 1:] - hy[1:-1, :-1]) / context.dx_m
+            - (hx[1:, 1:-1] - hx[:-1, 1:-1]) / context.dy_m
+        )
+        ez[1:-1, 1:-1] = decay_e[1:-1, 1:-1] * ez[1:-1, 1:-1] + drive_e[1:-1, 1:-1] * curl_h
+
+        time_s = frame_index * dt_s
+        ramp_s = max(8.0 * dt_s, 1.0e-12)
+        for port in context.ports:
+            drive = _port_signal(port, time_s, ramp_s)
+            mask = port["mask"]
+            if str(port.get("source_kind", "voltage")).lower() == "current":
+                ez[mask] += drive * dt_s / np.maximum(eps[mask], 1.0e-18)
+            else:
+                ez[mask] = drive
+        ez[context.pec_mask] = 0.0
+        ez[0, :] = 0.0
+        ez[-1, :] = 0.0
+        ez[:, 0] = 0.0
+        ez[:, -1] = 0.0
+
+        hmag = np.zeros_like(ez)
+        hmag[:-1, :] += hx * hx
+        hmag[1:, :] += hx * hx
+        hmag[:, :-1] += hy * hy
+        hmag[:, 1:] += hy * hy
+        hmag = np.sqrt(hmag * 0.25)
+        electric_frames[frame_index] = np.abs(ez)
+        magnetic_frames[frame_index] = MU_0 * context.mu_r * hmag
+
+    return FieldWaveSequence(
+        bounds_px=static.bounds_px,
+        x_grid_px=static.x_grid_px,
+        y_grid_px=static.y_grid_px,
+        potential_v=static.potential_v,
+        electric_frames_v_m=electric_frames,
+        magnetic_frames_t=magnetic_frames,
+        conductor_mask=context.pec_mask,
+        metadata={
+            "grid_width": int(nx),
+            "grid_height": int(ny),
+            "scale_m_per_px": float(context.scale_m_per_px),
+            "time_step_s": float(dt_s),
+            "steps": int(steps),
+            "materials_count": int(context.materials_count),
+            "ports_count": int(context.ports_count),
+            "solver": "maxwell_2d_tmz",
+            "note": note,
+        },
+    )
+
+
+def _simulate_tez(context: _FieldContext, *, steps: int, edge_absorber_cells: int) -> FieldWaveSequence:
+    static = context.snapshot
+    ny, nx = static.potential_v.shape
+    c0 = 1.0 / math.sqrt(EPSILON_0 * MU_0)
+    max_phase_velocity = c0 / math.sqrt(max(float(np.min(context.epsilon_r * context.mu_r)), 1.0e-9))
+    dt_s = 0.28 / (max_phase_velocity * math.sqrt((1.0 / context.dx_m ** 2) + (1.0 / context.dy_m ** 2)))
+    note = _field_mode_note(context, dt_s * steps)
+
+    ex = np.zeros((ny, nx), dtype=float)
+    ey = np.zeros((ny, nx), dtype=float)
+    hz = np.zeros((ny, nx), dtype=float)
+    electric_frames = np.zeros((steps, ny, nx), dtype=float)
+    magnetic_frames = np.zeros((steps, ny, nx), dtype=float)
+
+    absorber_cells = max(edge_absorber_cells, 4)
+    sigma_absorb = np.zeros((ny, nx), dtype=float)
+    sigma_max = 0.9 * EPSILON_0 / max(dt_s, 1.0e-18)
+    for y in range(ny):
+        for x in range(nx):
+            dist = min(x, nx - 1 - x, y, ny - 1 - y)
+            if dist < absorber_cells:
+                ratio = (absorber_cells - dist) / absorber_cells
+                sigma_absorb[y, x] = sigma_max * ratio * ratio
+    eps = EPSILON_0 * context.epsilon_r
+    mu = MU_0 * context.mu_r
+    sigma_e = context.sigma_s_per_m + sigma_absorb
+    sigma_h = sigma_absorb
+    decay_e = (1.0 - sigma_e * dt_s / (2.0 * eps)) / np.maximum(1.0 + sigma_e * dt_s / (2.0 * eps), 1.0e-9)
+    drive_e = dt_s / np.maximum(eps * (1.0 + sigma_e * dt_s / (2.0 * eps)), 1.0e-18)
+    decay_h = np.exp(-sigma_h * dt_s / np.maximum(mu, 1.0e-18))
+    port_masks = [port["mask"] for port in context.ports]
+    smoothing_mask = context.pec_mask.copy()
+    for mask in port_masks:
+        smoothing_mask |= mask
+    electric_interior_decay = 0.996
+    magnetic_interior_decay = 0.997
+
+    for frame_index in range(steps):
+        ex[1:, :] = decay_e[1:, :] * ex[1:, :] + drive_e[1:, :] * (hz[1:, :] - hz[:-1, :]) / context.dy_m
+        ey[:, 1:] = decay_e[:, 1:] * ey[:, 1:] - drive_e[:, 1:] * (hz[:, 1:] - hz[:, :-1]) / context.dx_m
+        curl_e = np.zeros_like(hz)
+        curl_e[:-1, :-1] = (
+            (ex[:-1, 1:] - ex[:-1, :-1]) / context.dx_m
+            - (ey[1:, :-1] - ey[:-1, :-1]) / context.dy_m
+        )
+        hz = decay_h * (hz + dt_s * curl_e / np.maximum(mu, 1.0e-18))
+
+        time_s = frame_index * dt_s
+        ramp_s = max(8.0 * dt_s, 1.0e-12)
+        for port in context.ports:
+            drive = _port_signal(port, time_s, ramp_s)
+            mask = port["mask"]
+            angle = math.radians(float(port.get("rotation_deg", 0.0)))
+            dir_x = math.cos(angle)
+            dir_y = math.sin(angle)
+            if str(port.get("source_kind", "voltage")).lower() == "current":
+                hz[mask] += 0.18 * drive * dt_s / np.maximum(mu[mask], 1.0e-18)
+            else:
+                ex[mask] = 0.82 * ex[mask] + 0.18 * drive * dir_x
+                ey[mask] = 0.82 * ey[mask] + 0.18 * drive * dir_y
+        ex = _low_pass_field(ex, smoothing_mask, strength=0.12, passes=1)
+        ey = _low_pass_field(ey, smoothing_mask, strength=0.12, passes=1)
+        hz = _low_pass_field(hz, smoothing_mask, strength=0.08, passes=1)
+        ex[1:-1, 1:-1] *= electric_interior_decay
+        ey[1:-1, 1:-1] *= electric_interior_decay
+        hz[1:-1, 1:-1] *= magnetic_interior_decay
+        ex[context.pec_mask] = 0.0
+        ey[context.pec_mask] = 0.0
+        hz[0, :] = 0.0
+        hz[-1, :] = 0.0
+        hz[:, 0] = 0.0
+        hz[:, -1] = 0.0
+        ex[0, :] = 0.0
+        ex[-1, :] = 0.0
+        ey[:, 0] = 0.0
+        ey[:, -1] = 0.0
+
+        electric_frames[frame_index] = np.hypot(ex, ey)
+        magnetic_frames[frame_index] = MU_0 * context.mu_r * np.abs(hz)
+
+    return FieldWaveSequence(
+        bounds_px=static.bounds_px,
+        x_grid_px=static.x_grid_px,
+        y_grid_px=static.y_grid_px,
+        potential_v=static.potential_v,
+        electric_frames_v_m=electric_frames,
+        magnetic_frames_t=magnetic_frames,
+        conductor_mask=context.pec_mask,
+        metadata={
+            "grid_width": int(nx),
+            "grid_height": int(ny),
+            "scale_m_per_px": float(context.scale_m_per_px),
+            "time_step_s": float(dt_s),
+            "steps": int(steps),
+            "materials_count": int(context.materials_count),
+            "ports_count": int(context.ports_count),
+            "solver": "maxwell_2d_tez",
+            "note": note,
         },
     )
 
@@ -382,8 +1070,10 @@ def simulate_full_wave_maxwell_2d(
     source_period_steps: int = 16,
     edge_absorber_cells: int = 16,
     source_gain: float = 1800.0,
+    mode: str = "tmz",
 ) -> FieldWaveSequence:
-    static = solve_quasi_static_field(
+    del source_period_steps, source_gain
+    context = _build_field_context(
         circuit,
         result,
         grid_width=grid_width,
@@ -391,93 +1081,17 @@ def simulate_full_wave_maxwell_2d(
         padding_px=padding_px,
         iterations=iterations,
     )
-    ny, nx = static.potential_v.shape
-    conductor_mask = static.conductor_mask.copy()
-    source_pattern = np.array(static.potential_v, dtype=float)
-    source_scale = max(float(np.max(np.abs(source_pattern[conductor_mask])) if np.any(conductor_mask) else 0.0), 1.0e-9)
-    source_pattern = source_gain * source_pattern / source_scale
-    if not np.any(np.abs(source_pattern[conductor_mask]) > 1.0e-6):
-        source_pattern[ny // 2 - 1:ny // 2 + 2, nx // 2 - 1:nx // 2 + 2] = source_gain
+    selected_mode = str(mode).lower()
+    if selected_mode == "tmz":
+        return _simulate_tmz(context, steps=steps, edge_absorber_cells=edge_absorber_cells)
+    if selected_mode == "tez":
+        return _simulate_tez(context, steps=steps, edge_absorber_cells=edge_absorber_cells)
+    raise ValueError(f"Unsupported Maxwell mode: {mode}")
 
-    scale_m_per_px = float(static.metadata.get("scale_m_per_px", 0.002))
-    dx_m = max((static.bounds_px[2] - static.bounds_px[0]) * scale_m_per_px / max(nx - 1, 1), 1.0e-9)
-    dy_m = max((static.bounds_px[3] - static.bounds_px[1]) * scale_m_per_px / max(ny - 1, 1), 1.0e-9)
-    c0 = 1.0 / math.sqrt(EPSILON_0 * MU_0)
-    dt_s = 0.57 / (c0 * math.sqrt((1.0 / dx_m ** 2) + (1.0 / dy_m ** 2)))
 
-    ez = np.zeros((ny, nx), dtype=float)
-    hx = np.zeros((ny - 1, nx), dtype=float)
-    hy = np.zeros((ny, nx - 1), dtype=float)
-    electric_frames = np.zeros((steps, ny, nx), dtype=float)
-    magnetic_frames = np.zeros((steps, ny, nx), dtype=float)
-
-    sigma_e = np.zeros((ny, nx), dtype=float)
-    sigma_hx = np.zeros((ny - 1, nx), dtype=float)
-    sigma_hy = np.zeros((ny, nx - 1), dtype=float)
-    absorber_cells = max(edge_absorber_cells, 4)
-    sigma_max = 0.9 * EPSILON_0 / max(dt_s, 1.0e-18)
-    for y in range(ny):
-        for x in range(nx):
-            dist = min(x, nx - 1 - x, y, ny - 1 - y)
-            if dist < absorber_cells:
-                ratio = (absorber_cells - dist) / absorber_cells
-                sigma_e[y, x] = sigma_max * ratio * ratio
-    sigma_hx[:, :] = 0.5 * (sigma_e[:-1, :] + sigma_e[1:, :])
-    sigma_hy[:, :] = 0.5 * (sigma_e[:, :-1] + sigma_e[:, 1:])
-
-    decay_e = (1.0 - sigma_e * dt_s / (2.0 * EPSILON_0)) / np.maximum(1.0 + sigma_e * dt_s / (2.0 * EPSILON_0), 1.0e-9)
-    drive_e = dt_s / (EPSILON_0 * np.maximum(1.0 + sigma_e * dt_s / (2.0 * EPSILON_0), 1.0e-9))
-    decay_hx = np.exp(-sigma_hx * dt_s / np.maximum(MU_0, 1.0e-18))
-    decay_hy = np.exp(-sigma_hy * dt_s / np.maximum(MU_0, 1.0e-18))
-
-    source_mask = conductor_mask.copy()
-    source_mask[0, :] = False
-    source_mask[-1, :] = False
-    source_mask[:, 0] = False
-    source_mask[:, -1] = False
-
-    for frame_index in range(steps):
-        hx = decay_hx * (hx - (dt_s / (MU_0 * dy_m)) * (ez[1:, :] - ez[:-1, :]))
-        hy = decay_hy * (hy + (dt_s / (MU_0 * dx_m)) * (ez[:, 1:] - ez[:, :-1]))
-
-        curl_h = (
-            (hy[1:-1, 1:] - hy[1:-1, :-1]) / dx_m
-            - (hx[1:, 1:-1] - hx[:-1, 1:-1]) / dy_m
-        )
-        ez[1:-1, 1:-1] = decay_e[1:-1, 1:-1] * ez[1:-1, 1:-1] + drive_e[1:-1, 1:-1] * curl_h
-
-        carrier = math.sin(2.0 * math.pi * frame_index / max(source_period_steps, 2))
-        envelope = 1.0 - math.exp(-frame_index / max(0.12 * steps, 1.0))
-        ez[source_mask] = source_pattern[source_mask] * carrier * envelope
-        ez[0, :] = 0.0
-        ez[-1, :] = 0.0
-        ez[:, 0] = 0.0
-        ez[:, -1] = 0.0
-
-        hmag = np.zeros_like(ez)
-        hmag[:-1, :] += hx * hx
-        hmag[1:, :] += hx * hx
-        hmag[:, :-1] += hy * hy
-        hmag[:, 1:] += hy * hy
-        hmag = np.sqrt(hmag * 0.25)
-        electric_frames[frame_index] = np.abs(ez)
-        magnetic_frames[frame_index] = MU_0 * hmag
-
-    return FieldWaveSequence(
-        bounds_px=static.bounds_px,
-        x_grid_px=static.x_grid_px,
-        y_grid_px=static.y_grid_px,
-        potential_v=static.potential_v,
-        electric_frames_v_m=electric_frames,
-        magnetic_frames_t=magnetic_frames,
-        conductor_mask=conductor_mask,
-        metadata={
-            "grid_width": int(grid_width),
-            "grid_height": int(grid_height),
-            "scale_m_per_px": float(scale_m_per_px),
-            "time_step_s": float(dt_s),
-            "steps": int(steps),
-            "source_period_steps": int(source_period_steps),
-            "solver": "maxwell_2d_tmz",
-        },
-    )
+def simulate_full_wave_maxwell_2d_tez(
+    circuit: Circuit,
+    result: SimulationResult,
+    **kwargs: Any,
+) -> FieldWaveSequence:
+    return simulate_full_wave_maxwell_2d(circuit, result, mode="tez", **kwargs)
