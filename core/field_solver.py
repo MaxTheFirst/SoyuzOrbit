@@ -363,7 +363,10 @@ def _source_component_port(component: Component, result: SimulationResult) -> di
         center = ((start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5)
         rotation_deg = math.degrees(math.atan2(dy, dx))
     else:
-        center = tuple(float(value) for value in getattr(component, "layout_position_px", (0.0, 0.0)))
+        position = getattr(component, "layout_position_px", None)
+        if position is None:
+            return None
+        center = tuple(float(value) for value in position)
         distance_px = 88.0
         rotation_deg = float(getattr(component, "layout_rotation_deg", 0.0))
     voltage_v = abs(_node_voltage(result, component.nodes[0]) - _node_voltage(result, component.nodes[1]))
