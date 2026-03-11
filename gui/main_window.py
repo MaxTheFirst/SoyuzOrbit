@@ -228,6 +228,9 @@ class MainWindow(QMainWindow):
 
         self.duration_input = QLineEdit("0.03")
         self.dt_input = QLineEdit("0.0001")
+        self.animation_speed_input = QLineEdit("1.0")
+        self.animation_speed_input.setToolTip("x1 = реальное время, x2 = в 2 раза быстрее, x0.001 = в 1000 раз медленнее.")
+        self.animation_speed_input.editingFinished.connect(self._on_animation_speed_edited)
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setPlainText("Результатов симуляции пока нет.")
@@ -343,6 +346,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.duration_input, 0, 1)
         layout.addWidget(QLabel("Шаг dt, с"), 1, 0)
         layout.addWidget(self.dt_input, 1, 1)
+        layout.addWidget(QLabel("Скорость x"), 2, 0)
+        layout.addWidget(self.animation_speed_input, 2, 1)
 
         wire_button = QPushButton("Соединить")
         wire_button.clicked.connect(self.scene.set_connect_mode)
@@ -373,20 +378,20 @@ class MainWindow(QMainWindow):
         maxwell_tez_button = QPushButton("Maxwell TEz")
         maxwell_tez_button.clicked.connect(self._show_maxwell_tez_wave)
 
-        layout.addWidget(wire_button, 2, 0)
-        layout.addWidget(delete_button, 2, 1)
-        layout.addWidget(route_button, 3, 0, 1, 2)
-        layout.addWidget(material_button, 4, 0)
-        layout.addWidget(port_button, 4, 1)
-        layout.addWidget(clear_button, 5, 0)
-        layout.addWidget(self.animation_toggle_button, 5, 1)
-        layout.addWidget(save_button, 6, 0)
-        layout.addWidget(load_button, 6, 1)
-        layout.addWidget(start_button, 7, 0)
-        layout.addWidget(field_button, 7, 1)
-        layout.addWidget(fdtd_button, 8, 0, 1, 2)
-        layout.addWidget(maxwell_button, 9, 0)
-        layout.addWidget(maxwell_tez_button, 9, 1)
+        layout.addWidget(wire_button, 3, 0)
+        layout.addWidget(delete_button, 3, 1)
+        layout.addWidget(route_button, 4, 0, 1, 2)
+        layout.addWidget(material_button, 5, 0)
+        layout.addWidget(port_button, 5, 1)
+        layout.addWidget(clear_button, 6, 0)
+        layout.addWidget(self.animation_toggle_button, 6, 1)
+        layout.addWidget(save_button, 7, 0)
+        layout.addWidget(load_button, 7, 1)
+        layout.addWidget(start_button, 8, 0)
+        layout.addWidget(field_button, 8, 1)
+        layout.addWidget(fdtd_button, 9, 0, 1, 2)
+        layout.addWidget(maxwell_button, 10, 0)
+        layout.addWidget(maxwell_tez_button, 10, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -592,6 +597,27 @@ class MainWindow(QMainWindow):
             raise ValueError("Длительность и шаг dt должны быть положительными.")
         return duration, dt
 
+    def _parse_animation_speed(self) -> float:
+        speed = float(self.animation_speed_input.text().strip().replace(",", "."))
+        if speed <= 0.0:
+            raise ValueError("Скорость анимации должна быть положительной.")
+        return speed
+
+    def _apply_animation_speed(self) -> float:
+        speed = self._parse_animation_speed()
+        self.scene.set_animation_speed(speed)
+        self.animation_speed_input.setText(f"{speed:g}")
+        return speed
+
+    def _on_animation_speed_edited(self) -> None:
+        try:
+            speed = self._apply_animation_speed()
+        except Exception as exc:  # noqa: BLE001
+            self.animation_speed_input.setText(f"{self.scene.animation_speed:g}")
+            QMessageBox.warning(self, "Ошибка скорости анимации", str(exc))
+            return
+        self.statusBar().showMessage(f"Скорость анимации: x{speed:g}")
+
     def _sync_animation_button(self) -> None:
         if self.animation_toggle_button is None:
             return
@@ -601,12 +627,17 @@ class MainWindow(QMainWindow):
         self.animation_toggle_button.setText("Пауза" if self.scene.animation_timer.isActive() else "Продолжить")
 
     def _toggle_animation(self) -> None:
+        try:
+            speed = self._apply_animation_speed()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Ошибка скорости анимации", str(exc))
+            return
         active = self.scene.toggle_animation()
         self._sync_animation_button()
         if self.scene.animation_result is None:
             self.statusBar().showMessage("Анимация еще не рассчитана.")
             return
-        self.statusBar().showMessage("Анимация идет." if active else "Анимация поставлена на паузу.")
+        self.statusBar().showMessage(f"Анимация идет на скорости x{speed:g}." if active else "Анимация поставлена на паузу.")
 
     def _save_project(self) -> None:
         try:
@@ -636,6 +667,7 @@ class MainWindow(QMainWindow):
 
     def _run_simulation(self) -> None:
         try:
+            self._apply_animation_speed()
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
             circuit = project.to_circuit()
@@ -654,6 +686,7 @@ class MainWindow(QMainWindow):
 
     def _show_field_map(self) -> None:
         try:
+            self._apply_animation_speed()
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
             self.last_circuit = project.to_circuit()
@@ -670,6 +703,7 @@ class MainWindow(QMainWindow):
 
     def _show_fdtd_wave(self) -> None:
         try:
+            self._apply_animation_speed()
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
             self.last_circuit = project.to_circuit()
@@ -686,6 +720,7 @@ class MainWindow(QMainWindow):
 
     def _show_maxwell_tmz_wave(self) -> None:
         try:
+            self._apply_animation_speed()
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
             self.last_circuit = project.to_circuit()
@@ -702,6 +737,7 @@ class MainWindow(QMainWindow):
 
     def _show_maxwell_tez_wave(self) -> None:
         try:
+            self._apply_animation_speed()
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
             self.last_circuit = project.to_circuit()

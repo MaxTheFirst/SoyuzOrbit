@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
@@ -29,6 +30,8 @@ from core import (
 from core.physics import MATERIALS, wire_resistance
 
 from .components_visual import build_qpixmap, default_params, default_visual_state, template_for
+
+ANIMATION_REFRESH_MS = 16
 
 
 NAME_PREFIXES = {
@@ -717,6 +720,9 @@ class CircuitScene(QGraphicsScene):
         self.animation_timer.timeout.connect(self._advance_animation)
         self.animation_result = None
         self.animation_frame = 0
+        self.animation_speed = 1.0
+        self.animation_anchor_real_s = 0.0
+        self.animation_anchor_sim_time_s = 0.0
         self.component_name_map: dict[str, ComponentItem] = {}
         self.selectionChanged.connect(self._emit_selection_change)
 
@@ -770,6 +776,20 @@ class CircuitScene(QGraphicsScene):
         self.animation_timer.stop()
         self.animation_state_changed.emit()
 
+    def set_animation_speed(self, speed: float) -> None:
+        new_speed = max(float(speed), 1.0e-9)
+        if self.animation_result is not None and self.animation_timer.isActive():
+            now_s = time.perf_counter()
+            current_time_s = self._animation_target_time_s(now_s)
+            self.animation_speed = new_speed
+            self._set_animation_anchor(now_s=now_s, sim_time_s=current_time_s)
+            frame_index = self._frame_index_for_time(current_time_s)
+            if frame_index != self.animation_frame:
+                self.animation_frame = frame_index
+                self.apply_result_frame(frame_index)
+            return
+        self.animation_speed = new_speed
+
     def toggle_animation(self) -> bool:
         if self.animation_result is None or len(self.animation_result.time_s) <= 1:
             return False
@@ -780,7 +800,8 @@ class CircuitScene(QGraphicsScene):
         if self.animation_frame >= len(self.animation_result.time_s) - 1:
             self.animation_frame = 0
             self.apply_result_frame(0)
-        self.animation_timer.start(25)
+        self._set_animation_anchor()
+        self.animation_timer.start(ANIMATION_REFRESH_MS)
         self.animation_state_changed.emit()
         return True
 
@@ -1198,7 +1219,8 @@ class CircuitScene(QGraphicsScene):
         self.animation_frame = 0
         self.apply_result_frame(0)
         if len(result.time_s) > 1:
-            self.animation_timer.start(25)
+            self._set_animation_anchor()
+            self.animation_timer.start(ANIMATION_REFRESH_MS)
         self.animation_state_changed.emit()
 
     def _advance_animation(self) -> None:
@@ -1206,14 +1228,41 @@ class CircuitScene(QGraphicsScene):
             self.animation_timer.stop()
             self.animation_state_changed.emit()
             return
-        self.animation_frame += 1
-        if self.animation_frame >= len(self.animation_result.time_s):
-            self.animation_frame = len(self.animation_result.time_s) - 1
-        self.apply_result_frame(self.animation_frame)
-        if self.animation_frame >= len(self.animation_result.time_s) - 1:
+        target_time_s = self._animation_target_time_s(time.perf_counter())
+        frame_index = self._frame_index_for_time(target_time_s)
+        if frame_index != self.animation_frame:
+            self.animation_frame = frame_index
+            self.apply_result_frame(frame_index)
+        if target_time_s >= float(self.animation_result.time_s[-1]) - 1.0e-12:
+            if self.animation_frame != len(self.animation_result.time_s) - 1:
+                self.animation_frame = len(self.animation_result.time_s) - 1
+                self.apply_result_frame(self.animation_frame)
             self.animation_timer.stop()
             self.animation_state_changed.emit()
             return
+
+    def _set_animation_anchor(self, *, now_s: float | None = None, sim_time_s: float | None = None) -> None:
+        self.animation_anchor_real_s = time.perf_counter() if now_s is None else now_s
+        if self.animation_result is None or len(self.animation_result.time_s) == 0:
+            self.animation_anchor_sim_time_s = 0.0
+            return
+        if sim_time_s is None:
+            sim_time_s = float(self.animation_result.time_s[self.animation_frame])
+        last_time_s = float(self.animation_result.time_s[-1])
+        self.animation_anchor_sim_time_s = min(max(float(sim_time_s), 0.0), last_time_s)
+
+    def _animation_target_time_s(self, now_s: float) -> float:
+        if self.animation_result is None or len(self.animation_result.time_s) == 0:
+            return 0.0
+        last_time_s = float(self.animation_result.time_s[-1])
+        elapsed_s = max(now_s - self.animation_anchor_real_s, 0.0)
+        return min(self.animation_anchor_sim_time_s + elapsed_s * self.animation_speed, last_time_s)
+
+    def _frame_index_for_time(self, time_s: float) -> int:
+        if self.animation_result is None or len(self.animation_result.time_s) == 0:
+            return 0
+        index = int(self.animation_result.time_s.searchsorted(time_s, side="right") - 1)
+        return max(0, min(index, len(self.animation_result.time_s) - 1))
 
 
 class CircuitView(QGraphicsView):
