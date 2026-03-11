@@ -36,6 +36,7 @@ NAME_PREFIXES = {
     "Junction": "Точка",
     "Battery": "Батарея",
     "AC Generator": "Генератор",
+    "WAV Source": "Аудио",
     "Pulse Generator": "ИмпГен",
     "Resistor": "Резистор",
     "Thermistor": "Термистор",
@@ -700,6 +701,7 @@ class CircuitScene(QGraphicsScene):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setSceneRect(0.0, 0.0, 2200.0, 1400.0)
+        self.project_source_path: str | None = None
         self.place_kind: str | None = None
         self.connect_mode = False
         self.route_mode = False
@@ -788,6 +790,7 @@ class CircuitScene(QGraphicsScene):
         self.stop_animation()
         self.animation_result = None
         self.animation_frame = 0
+        self.project_source_path = None
         self.clear()
         self.component_items.clear()
         self.wire_items.clear()
@@ -1130,10 +1133,12 @@ class CircuitScene(QGraphicsScene):
             wires=wires,
             material_regions=material_regions,
             field_ports=field_ports,
+            source_path=self.project_source_path,
         )
 
     def load_project(self, project: CircuitProject) -> None:
         self.clear_circuit()
+        self.project_source_path = project.source_path
         component_lookup: dict[tuple[int, int], TerminalItem] = {}
         for record in sorted(project.components, key=lambda entry: entry.component_id):
             item = self.add_component(

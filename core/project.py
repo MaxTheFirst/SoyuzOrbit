@@ -117,6 +117,7 @@ class CircuitProject:
     material_regions: list[MaterialRegionRecord] = field(default_factory=list)
     field_ports: list[FieldPortRecord] = field(default_factory=list)
     schema_version: int = SCHEMA_VERSION
+    source_path: str | None = field(default=None, repr=False, compare=False)
 
     def validate(self) -> None:
         component_by_id = {component.component_id: component for component in self.components}
@@ -238,7 +239,9 @@ class CircuitProject:
     @classmethod
     def load(cls, path: str | Path) -> "CircuitProject":
         source = Path(path)
-        return cls.from_dict(json.loads(source.read_text(encoding="utf-8")))
+        project = cls.from_dict(json.loads(source.read_text(encoding="utf-8")))
+        project.source_path = str(source.resolve())
+        return project
 
     def to_circuit(self) -> Circuit:
         self.validate()
@@ -286,7 +289,21 @@ class CircuitProject:
                 continue
             terminal_count = len(COMPONENT_TERMINALS[component.kind])
             node_list = [pin_nodes[(component.component_id, terminal_index)] for terminal_index in range(terminal_count)]
-            instance = create_component(component.kind, component.name, node_list, **component.params)
+            params = dict(component.params)
+            if component.kind == "WAV Source":
+                raw_path = params.get("audio_path", params.get("wav_path"))
+                if isinstance(raw_path, str) and raw_path and not Path(raw_path).is_absolute() and self.source_path is not None:
+                    project_relative = (Path(self.source_path).parent / raw_path).resolve()
+                    cwd_relative = Path(raw_path).resolve()
+                    if project_relative.exists() or not cwd_relative.exists():
+                        resolved_path = str(project_relative)
+                    else:
+                        resolved_path = str(cwd_relative)
+                    if "audio_path" in params:
+                        params["audio_path"] = resolved_path
+                    else:
+                        params["wav_path"] = resolved_path
+            instance = create_component(component.kind, component.name, node_list, **params)
             instance.group_name = component.name
             instance.layout_position_px = (component.x, component.y)
             instance.layout_points_px = component.terminal_positions or [(component.x, component.y)]

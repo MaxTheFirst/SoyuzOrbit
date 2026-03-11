@@ -43,6 +43,7 @@ TEMPLATES: dict[str, VisualTemplate] = {
     "Junction": VisualTemplate("Junction", "Точка", "Junction", (28, 28), ((0.5, 0.5),), COMPONENT_TERMINALS["Junction"], {}),
     "Battery": VisualTemplate("Battery", "Батарея", "Battery", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Battery"], COMPONENT_LIBRARY["Battery"][1].copy()),
     "AC Generator": VisualTemplate("AC Generator", "Генератор AC", "AC Generator", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["AC Generator"], COMPONENT_LIBRARY["AC Generator"][1].copy()),
+    "WAV Source": VisualTemplate("WAV Source", "Аудио-источник", "WAV Source", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["WAV Source"], COMPONENT_LIBRARY["WAV Source"][1].copy()),
     "Pulse Generator": VisualTemplate("Pulse Generator", "Импульсный генератор", "Pulse Generator", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Pulse Generator"], COMPONENT_LIBRARY["Pulse Generator"][1].copy()),
     "Resistor": VisualTemplate("Resistor", "Резистор", "Resistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Resistor"], COMPONENT_LIBRARY["Resistor"][1].copy()),
     "Thermistor": VisualTemplate("Thermistor", "Термистор", "Thermistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Thermistor"], COMPONENT_LIBRARY["Thermistor"][1].copy()),
@@ -182,6 +183,28 @@ def _render_pulse_generator(template: VisualTemplate, state: dict[str, Any]) -> 
         (100, h / 2 + 10),
     ]
     draw.line(pulse_points, fill="#15803d", width=4)
+    return image
+
+
+def _render_wav_source(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    cy = h / 2
+    draw.line((12, cy, 28, cy), fill="#6a6f73", width=4)
+    draw.line((w - 28, cy, w - 12, cy), fill="#6a6f73", width=4)
+    draw.rounded_rectangle((30, 14, w - 30, h - 14), radius=14, fill="#edf6ff", outline="#1d4ed8", width=3)
+    draw.rectangle((40, 22, 62, h - 22), fill="#1e293b", outline="#0f172a")
+    draw.text((45, 28), "W", fill="#dbeafe")
+    waveform_points = [
+        (68, cy + 8),
+        (76, cy + 8),
+        (82, cy - 10),
+        (90, cy + 10),
+        (98, cy - 12),
+        (106, cy + 8),
+    ]
+    draw.line(waveform_points, fill="#2563eb", width=4)
     return image
 
 
@@ -434,6 +457,7 @@ RENDERERS = {
     "Junction": _render_junction,
     "Battery": _render_battery,
     "AC Generator": _render_generator,
+    "WAV Source": _render_wav_source,
     "Pulse Generator": _render_pulse_generator,
     "Resistor": _render_resistor,
     "Thermistor": _render_thermistor,

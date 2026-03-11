@@ -25,6 +25,7 @@
 | `requirements.txt` | Внешние зависимости проекта. |
 | `core/component.py` | Базовые классы `Component` и `TwoTerminalComponent`. |
 | `core/components.py` | Библиотека физических моделей компонентов и фабрика `create_component()`. |
+| `core/audio_io.py` | Загрузка mono-WAV в электрический временной ряд и сохранение рассчитанного сигнала узла обратно в WAV. |
 | `core/engine.py` | Класс `Circuit`, численный решатель, тепловые и ЭМ-связи, временная интеграция. |
 | `core/project.py` | Формат проекта, датаклассы JSON-схемы, преобразование проекта в `Circuit`. |
 | `core/field_solver.py` | Квазистатический полевой решатель, FDTD и 2D Maxwell. |
@@ -89,6 +90,8 @@ GUI открывает редактор схем, где можно:
 - сохранить схему в JSON;
 - загрузить JSON-проект;
 - запустить переходный расчет;
+- прослушать рассчитанный аудиосигнал выбранного узла;
+- сохранить рассчитанный аудиосигнал выбранного узла в WAV;
 - показать карту поля, FDTD, Maxwell TMz или Maxwell TEz.
 
 ### Запуск CLI по Python-примеру
@@ -163,6 +166,10 @@ CLI умеет принимать:
 | `--save-field` | Экспортировать квазистатическую карту поля. |
 | `--save-fdtd` | Экспортировать GIF упрощенной FDTD-волны. |
 | `--save-maxwell` | Экспортировать GIF полного 2D Maxwell-решения. |
+| `--save-node-wav` | Экспортировать напряжение выбранного узла в WAV-файл. |
+| `--wav-node` | Имя узла для WAV-экспорта. |
+| `--wav-reference-node` | Опорный узел для WAV-экспорта, по умолчанию `0`. |
+| `--wav-no-normalize` | Не нормализовать амплитуду перед записью WAV. |
 | `--maxwell-mode {tmz,tez}` | Выбрать режим Maxwell. |
 | `--field-layer {potential,electric,magnetic}` | Выбрать слой для экспорта поля/анимации. |
 
@@ -172,6 +179,7 @@ CLI умеет принимать:
 - для JSON-проекта длительность и `dt` берутся из `project.settings`;
 - после расчета CLI печатает итоговые напряжения узлов и итоговые наблюдаемые величины компонентов;
 - при построении графиков используются массивы из `SimulationResult`.
+- при `--save-node-wav` частота дискретизации выходного WAV берется как `1 / dt`.
 
 ## 5. Главные сущности модели
 
@@ -510,6 +518,19 @@ GUI и JSON не описывают MNA-узлы напрямую. Вместо 
   - добавляет фазовый шум;
   - поддерживает ошибку частоты и 2-ю/3-ю гармоники.
 - Наблюдаемые величины: `temperature_c`, `surface_temperature_c`, `power_w`, `voltage_v`, `current_a`, `emf_v`, `frequency_hz`.
+
+#### `WAV Source` (`WavSource`)
+
+- Выводы: `positive`, `negative`.
+- GUI default params: `wav_path="examples/audio_assets/test_tone.wav"`, `amplitude_v=1.0`, `dc_bias_v=0.0`, `channel=0`, `loop=false`, `start_time_s=0.0`, `internal_resistance_ohm=0.5`, `remove_dc=true`.
+- Модель:
+  - читает `wav` напрямую через `scipy.io.wavfile`;
+  - читает `mp3`, `flac`, `ogg`, `m4a`, `aac`, `aiff` через внешний `ffmpeg`;
+  - выбирает один канал и нормирует PCM/float-данные в электрический сигнал;
+  - опционально вычитает DC-смещение;
+  - подает сигнал как источник Тевенина с внутренним сопротивлением;
+  - поддерживает задержку старта и зацикливание.
+- Наблюдаемые величины: `temperature_c`, `surface_temperature_c`, `power_w`, `voltage_v`, `current_a`, `emf_v`, `sample_rate_hz`, `signal_duration_s`.
 
 #### `Pulse Generator` (`PulseGenerator`)
 
@@ -1057,6 +1078,7 @@ GUI и JSON не описывают MNA-узлы напрямую. Вместо 
 - `Junction`
 - `Battery`
 - `AC Generator`
+- `WAV Source`
 - `Pulse Generator`
 - `Resistor`
 - `Thermistor`
@@ -1117,7 +1139,7 @@ GUI и JSON не описывают MNA-узлы напрямую. Вместо 
 
 | Тип | Порядок выводов |
 | --- | --- |
-| `Battery`, `AC Generator`, `Pulse Generator`, `Resistor`, `Thermistor`, `Photoresistor`, `Capacitor`, `Inductor`, `Diode`, `LED`, `Varistor`, `Fuse`, `Bulb`, `Ammeter`, `Voltmeter`, `Switch` | `positive`, `negative` |
+| `Battery`, `AC Generator`, `WAV Source`, `Pulse Generator`, `Resistor`, `Thermistor`, `Photoresistor`, `Capacitor`, `Inductor`, `Diode`, `LED`, `Varistor`, `Fuse`, `Bulb`, `Ammeter`, `Voltmeter`, `Switch` | `positive`, `negative` |
 | `MOSFET` | `drain`, `gate`, `source` |
 | `OpAmp` | `plus`, `minus`, `out` |
 | `Ground` | `ground` |
@@ -1290,6 +1312,19 @@ GUI и JSON не описывают MNA-узлы напрямую. Вместо 
 - Открывается напрямую в GUI, без Python-кода.
 - Использует два AC-генератора, диодный удвоитель, накопительный bus и три канала индикации с разной инерцией.
 
+### `examples/wav_tone_shaper.json`
+
+- JSON-версия аудиопримера с `WAV Source`.
+- Загружает `audio_assets/test_tone.wav`, пропускает сигнал через RC-звено и анти-параллельные диоды.
+- Для CLI-экспорта в WAV выходным узлом является `n15`.
+
+### `examples/mp3_wire_labyrinth.json`
+
+- JSON-пример, который сразу загружает `audio_assets/test_tone.mp3`.
+- Схема делит сигнал на две ветви: темную через длинную тонкую линию и RC-подавление верхов, и более яркую через емкостную ветвь присутствия.
+- После смешения сигнал проходит через еще одну длинную линию и мягкий диодный клиппер.
+- Для CLI-экспорта в WAV выходным узлом является `n17`.
+
 ## 16. Python-примеры в `examples/`
 
 ### `examples/test_dc_basic.py`
@@ -1313,6 +1348,13 @@ GUI и JSON не описывают MNA-узлы напрямую. Вместо 
 - Далее сигнал проходит через диодный удвоитель и заряжает общий накопительный bus.
 - От bus питаются три диодно-емкостных канала с разными порогами и временами удержания.
 - Визуально это работает как пассивная “световая скульптура”: быстрый, средний и медленный LED-каналы по-разному реагируют на beat-огибающую.
+
+### `examples/wav_tone_shaper.py`
+
+- `WAV Source` подает в схему реальный аудиосигнал из `examples/audio_assets/test_tone.wav`.
+- RC-звено сглаживает верхние гармоники, а две встречно включенные диоды создают мягкий клиппинг.
+- Практический запуск:
+  - `python run_sim.py examples/wav_tone_shaper.py --save-node-wav out.wav --wav-node out`
 
 ## 17. Работа через Python API
 

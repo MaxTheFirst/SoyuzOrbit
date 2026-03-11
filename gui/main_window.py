@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSize, Qt, QUrl
 from PyQt6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -23,8 +26,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 
-from core import COMPONENT_TERMINALS, load_project
+from core import COMPONENT_TERMINALS, export_result_node_wav, load_project
 from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
 
 from .canvas import CircuitScene, CircuitView, ComponentItem, FieldPortItem, MaterialRegionItem, WireItem
@@ -40,6 +44,13 @@ PARAMETER_LABELS = {
     "chemistry": "Химия",
     "internal_resistance_ohm": "Внутреннее сопротивление, Ом",
     "amplitude_v": "Амплитуда, В",
+    "wav_path": "Путь к аудио",
+    "audio_path": "Путь к аудио",
+    "dc_bias_v": "Смещение DC, В",
+    "channel": "Канал",
+    "loop": "Зациклить",
+    "start_time_s": "Старт, с",
+    "remove_dc": "Убрать DC",
     "high_voltage_v": "Высокий уровень, В",
     "low_voltage_v": "Низкий уровень, В",
     "frequency_hz": "Частота, Гц",
@@ -187,6 +198,7 @@ OBSERVABLE_LABELS = {
     "voltage_v": "напряжение, В",
     "temperature_c": "температура, °C",
     "surface_temperature_c": "температура корпуса, °C",
+    "emf_v": "ЭДС, В",
     "brightness": "яркость",
     "glow": "накал",
     "soc": "заряд",
@@ -194,6 +206,8 @@ OBSERVABLE_LABELS = {
     "current_limit": "ограничение тока",
     "reading_a": "показание, А",
     "reading_v": "показание, В",
+    "sample_rate_hz": "частота дискретизации, Гц",
+    "signal_duration_s": "длительность сигнала, с",
 }
 
 
@@ -214,11 +228,22 @@ class MainWindow(QMainWindow):
         self.property_inputs: dict[str, QLineEdit] = {}
         self.library_buttons: list[QPushButton] = []
         self.animation_toggle_button: QPushButton | None = None
+        self.audio_node_combo: QComboBox | None = None
+        self.audio_reference_combo: QComboBox | None = None
+        self.audio_play_button: QPushButton | None = None
+        self.audio_stop_button: QPushButton | None = None
+        self.audio_save_button: QPushButton | None = None
         self.last_circuit = None
         self.last_result = None
         self.last_field_snapshot = None
         self.last_fdtd_sequence = None
         self.last_maxwell_sequence = None
+        self.last_audio_export_path: Path | None = None
+        self.audio_output_device = QAudioOutput(self)
+        self.audio_output_device.setVolume(1.0)
+        self.audio_player = QMediaPlayer(self)
+        self.audio_player.setAudioOutput(self.audio_output_device)
+        self.audio_player.errorOccurred.connect(self._on_audio_error)
 
         self.scene = CircuitScene(self)
         self.scene.selection_changed.connect(self._on_selection_changed)
@@ -317,6 +342,7 @@ class MainWindow(QMainWindow):
             "Bulb",
             "Switch",
             "AC Generator",
+            "WAV Source",
             "Pulse Generator",
             "MOSFET",
             "OpAmp",
@@ -343,6 +369,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.duration_input, 0, 1)
         layout.addWidget(QLabel("Шаг dt, с"), 1, 0)
         layout.addWidget(self.dt_input, 1, 1)
+        self.audio_node_combo = QComboBox()
+        self.audio_reference_combo = QComboBox()
+        self.audio_play_button = QPushButton("Слушать звук")
+        self.audio_stop_button = QPushButton("Стоп звук")
+        self.audio_save_button = QPushButton("Сохранить WAV")
+        self.audio_play_button.clicked.connect(self._play_audio_result)
+        self.audio_stop_button.clicked.connect(self._stop_audio_result)
+        self.audio_save_button.clicked.connect(self._save_audio_result)
 
         wire_button = QPushButton("Соединить")
         wire_button.clicked.connect(self.scene.set_connect_mode)
@@ -355,7 +389,7 @@ class MainWindow(QMainWindow):
         port_button = QPushButton("Порт поля")
         port_button.clicked.connect(self.scene.set_place_port_mode)
         clear_button = QPushButton("Очистить")
-        clear_button.clicked.connect(self.scene.clear_circuit)
+        clear_button.clicked.connect(self._clear_project_state)
         self.animation_toggle_button = QPushButton("Пауза")
         self.animation_toggle_button.clicked.connect(self._toggle_animation)
         save_button = QPushButton("Сохранить JSON")
@@ -387,6 +421,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(fdtd_button, 8, 0, 1, 2)
         layout.addWidget(maxwell_button, 9, 0)
         layout.addWidget(maxwell_tez_button, 9, 1)
+        layout.addWidget(QLabel("Аудио узел"), 10, 0)
+        layout.addWidget(self.audio_node_combo, 10, 1)
+        layout.addWidget(QLabel("Опора"), 11, 0)
+        layout.addWidget(self.audio_reference_combo, 11, 1)
+        layout.addWidget(self.audio_play_button, 12, 0)
+        layout.addWidget(self.audio_stop_button, 12, 1)
+        layout.addWidget(self.audio_save_button, 13, 0, 1, 2)
+        self._reset_audio_controls()
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -394,6 +436,107 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(box)
         layout.addWidget(self.log_output)
         return box
+
+    def _reset_audio_controls(self) -> None:
+        if self.audio_node_combo is not None:
+            self.audio_node_combo.clear()
+            self.audio_node_combo.addItem("0")
+        if self.audio_reference_combo is not None:
+            self.audio_reference_combo.clear()
+            self.audio_reference_combo.addItem("0")
+            self.audio_reference_combo.setCurrentText("0")
+        for button in (self.audio_play_button, self.audio_stop_button, self.audio_save_button):
+            if button is not None:
+                button.setEnabled(False)
+        self.last_audio_export_path = None
+
+    def _populate_audio_controls(self, result) -> None:
+        if self.audio_node_combo is None or self.audio_reference_combo is None:
+            return
+        nodes = sorted(result.node_voltages)
+        current_output = self.audio_node_combo.currentText()
+        current_reference = self.audio_reference_combo.currentText()
+        self.audio_node_combo.clear()
+        self.audio_reference_combo.clear()
+        self.audio_reference_combo.addItem("0")
+        self.audio_node_combo.addItems(nodes)
+        self.audio_reference_combo.addItems(nodes)
+        preferred_output = current_output if current_output in nodes else ("out" if "out" in nodes else (nodes[-1] if nodes else "0"))
+        preferred_reference = current_reference if current_reference in {"0", *nodes} else "0"
+        if preferred_output != "0":
+            self.audio_node_combo.setCurrentText(preferred_output)
+        if preferred_reference in {"0", *nodes}:
+            self.audio_reference_combo.setCurrentText(preferred_reference)
+        for button in (self.audio_play_button, self.audio_stop_button, self.audio_save_button):
+            if button is not None:
+                button.setEnabled(bool(nodes))
+        self.last_audio_export_path = None
+
+    def _default_audio_export_path(self) -> Path:
+        stem = "soyuzorbit_output"
+        if self.last_result is not None:
+            stem = str(self.last_result.metadata.get("name", stem)).strip().replace(" ", "_") or stem
+        return Path(tempfile.gettempdir()) / f"{stem}.wav"
+
+    def _selected_audio_nodes(self) -> tuple[str, str]:
+        if self.last_result is None or self.audio_node_combo is None or self.audio_reference_combo is None:
+            raise ValueError("Сначала выполни симуляцию.")
+        output_node = self.audio_node_combo.currentText().strip()
+        reference_node = self.audio_reference_combo.currentText().strip() or "0"
+        if not output_node:
+            raise ValueError("Выбери выходной узел для звука.")
+        return output_node, reference_node
+
+    def _export_audio_result(self, target: Path, *, normalize: bool = True) -> Path:
+        if self.last_result is None:
+            raise ValueError("Сначала выполни симуляцию.")
+        output_node, reference_node = self._selected_audio_nodes()
+        path = export_result_node_wav(self.last_result, target, node=output_node, reference_node=reference_node, normalize=normalize)
+        self.last_audio_export_path = path
+        return path
+
+    def _play_audio_result(self) -> None:
+        try:
+            path = self._export_audio_result(self._default_audio_export_path())
+            self.audio_player.stop()
+            self.audio_player.setSource(QUrl.fromLocalFile(str(path)))
+            self.audio_player.play()
+            self.statusBar().showMessage(f"Воспроизведение результата: {path.name}")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка воспроизведения", str(exc))
+
+    def _stop_audio_result(self) -> None:
+        self.audio_player.stop()
+        self.statusBar().showMessage("Воспроизведение результата остановлено.")
+
+    def _save_audio_result(self) -> None:
+        try:
+            suggested = self._default_audio_export_path().name
+            path, _ = QFileDialog.getSaveFileName(self, "Сохранить результат как WAV", suggested, "WAV файлы (*.wav)")
+            if not path:
+                return
+            target = Path(path)
+            if target.suffix.lower() != ".wav":
+                target = target.with_suffix(".wav")
+            saved = self._export_audio_result(target)
+            self.statusBar().showMessage(f"Результат сохранен: {saved}")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка сохранения WAV", str(exc))
+
+    def _on_audio_error(self, error, error_string: str) -> None:
+        del error
+        if error_string:
+            self.statusBar().showMessage(f"Ошибка аудиоплеера: {error_string}")
+
+    def _clear_project_state(self) -> None:
+        self.audio_player.stop()
+        self.scene.clear_circuit()
+        self.last_circuit = None
+        self.last_result = None
+        self.last_field_snapshot = None
+        self.last_fdtd_sequence = None
+        self.last_maxwell_sequence = None
+        self._reset_audio_controls()
 
     def _clear_properties(self, hint: str) -> None:
         self.name_input = None
@@ -441,7 +584,19 @@ class MainWindow(QMainWindow):
                 continue
             line = QLineEdit(str(value))
             self.property_inputs[key] = line
-            self.properties_form.addRow(QLabel(PARAMETER_LABELS.get(key, key)), line)
+            if key in {"wav_path", "audio_path"}:
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
+                browse_button = QPushButton("...")
+                browse_button.setFixedWidth(34)
+                browse_button.clicked.connect(lambda checked=False, widget=line: self._browse_audio_file(widget))
+                row_layout.addWidget(line, stretch=1)
+                row_layout.addWidget(browse_button)
+                self.properties_form.addRow(QLabel(PARAMETER_LABELS.get(key, key)), row)
+            else:
+                self.properties_form.addRow(QLabel(PARAMETER_LABELS.get(key, key)), line)
         if not self.property_inputs:
             self.properties_form.addRow(QLabel("Редактируемых параметров нет."))
         apply_button = QPushButton("Применить")
@@ -511,6 +666,22 @@ class MainWindow(QMainWindow):
         if isinstance(template_value, float):
             return float(raw)
         return raw
+
+    def _browse_audio_file(self, line_edit: QLineEdit) -> None:
+        current_value = line_edit.text().strip()
+        start_dir = ""
+        if current_value:
+            candidate = Path(current_value)
+            if candidate.exists():
+                start_dir = str(candidate if candidate.is_dir() else candidate.parent)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выбрать аудиофайл",
+            start_dir,
+            "Аудио (*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.aif *.aiff);;Все файлы (*)",
+        )
+        if path:
+            line_edit.setText(path)
 
     def _apply_properties(self) -> None:
         if self.current_selected is None:
@@ -592,6 +763,17 @@ class MainWindow(QMainWindow):
             raise ValueError("Длительность и шаг dt должны быть положительными.")
         return duration, dt
 
+    def _store_simulation_result(self, circuit, result) -> None:
+        self.last_circuit = circuit
+        self.last_result = result
+        self.last_field_snapshot = None
+        self.last_fdtd_sequence = None
+        self.last_maxwell_sequence = None
+        self.scene.play_result(result)
+        self._sync_animation_button()
+        self._write_log(result)
+        self._populate_audio_controls(result)
+
     def _sync_animation_button(self) -> None:
         if self.animation_toggle_button is None:
             return
@@ -629,6 +811,13 @@ class MainWindow(QMainWindow):
             self.duration_input.setText(f"{project.settings.duration_s:g}")
             self.dt_input.setText(f"{project.settings.dt_s:g}")
             self.scene.load_project(project)
+            self.audio_player.stop()
+            self.last_circuit = None
+            self.last_result = None
+            self.last_field_snapshot = None
+            self.last_fdtd_sequence = None
+            self.last_maxwell_sequence = None
+            self._reset_audio_controls()
             self._sync_animation_button()
             self.statusBar().showMessage(f"Проект загружен: {path}")
         except Exception as exc:  # noqa: BLE001
@@ -640,14 +829,7 @@ class MainWindow(QMainWindow):
             project = self.scene.build_project("Схема на холсте", duration, dt)
             circuit = project.to_circuit()
             result = circuit.simulate(duration, dt)
-            self.last_circuit = circuit
-            self.last_result = result
-            self.last_field_snapshot = None
-            self.last_fdtd_sequence = None
-            self.last_maxwell_sequence = None
-            self.scene.play_result(result)
-            self._sync_animation_button()
-            self._write_log(result)
+            self._store_simulation_result(circuit, result)
             self.statusBar().showMessage("Симуляция завершена. Анимация запущена и будет повторяться по кругу.")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка симуляции", str(exc))
@@ -656,11 +838,9 @@ class MainWindow(QMainWindow):
         try:
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
+            circuit = project.to_circuit()
+            result = circuit.simulate(duration, dt)
+            self._store_simulation_result(circuit, result)
             self.last_field_snapshot = solve_quasi_static_field(self.last_circuit, self.last_result)
             dialog = FieldPreviewDialog(self.last_field_snapshot, self)
             dialog.exec()
@@ -672,11 +852,9 @@ class MainWindow(QMainWindow):
         try:
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
+            circuit = project.to_circuit()
+            result = circuit.simulate(duration, dt)
+            self._store_simulation_result(circuit, result)
             self.last_fdtd_sequence = simulate_fdtd_wave(self.last_circuit, self.last_result)
             dialog = FieldPreviewDialog(self.last_fdtd_sequence, self)
             dialog.exec()
@@ -688,11 +866,9 @@ class MainWindow(QMainWindow):
         try:
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
+            circuit = project.to_circuit()
+            result = circuit.simulate(duration, dt)
+            self._store_simulation_result(circuit, result)
             self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result, mode="tmz")
             dialog = FieldPreviewDialog(self.last_maxwell_sequence, self)
             dialog.exec()
@@ -704,11 +880,9 @@ class MainWindow(QMainWindow):
         try:
             duration, dt = self._parse_simulation_settings()
             project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
+            circuit = project.to_circuit()
+            result = circuit.simulate(duration, dt)
+            self._store_simulation_result(circuit, result)
             self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result, mode="tez")
             dialog = FieldPreviewDialog(self.last_maxwell_sequence, self)
             dialog.exec()

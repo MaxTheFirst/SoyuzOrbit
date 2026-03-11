@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Iterable
 
+from core.audio_io import export_result_node_wav
 from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
 from core.project import load_project
 from core.engine import load_example_module
@@ -102,9 +103,13 @@ def _save_maxwell(circuit, result, layer: str, target: str, mode: str) -> None:
     )
 
 
-def _plot_result(result, plot_currents: bool, plot_temp: bool, plot_nodes: bool, save_plot: str | None) -> None:
-    import matplotlib.pyplot as plt
+def _save_node_wav(result, *, node: str, reference_node: str, target: str, normalize: bool) -> None:
+    path = export_result_node_wav(result, target, node=node, reference_node=reference_node, normalize=normalize)
+    sample_rate_hz = int(round(1.0 / float(result.metadata["dt_s"])))
+    print(f"Saved node waveform to {path} ({node} relative to {reference_node}, {sample_rate_hz} Hz)")
 
+
+def _plot_result(result, plot_currents: bool, plot_temp: bool, plot_nodes: bool, save_plot: str | None) -> None:
     panels = []
     if plot_nodes:
         panels.append("nodes")
@@ -114,6 +119,7 @@ def _plot_result(result, plot_currents: bool, plot_temp: bool, plot_nodes: bool,
         panels.append("temperature")
     if not panels:
         return
+    import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(len(panels), 1, figsize=(11, 3.8 * len(panels)), squeeze=False)
     axes_flat = axes.ravel()
@@ -174,6 +180,10 @@ def main() -> None:
     parser.add_argument("--save-field", help="Save a quasi-static field map image to a file.")
     parser.add_argument("--save-fdtd", help="Save a simplified FDTD wave animation to a GIF file.")
     parser.add_argument("--save-maxwell", help="Save a 2D full-wave Maxwell animation to a GIF file.")
+    parser.add_argument("--save-node-wav", help="Save the voltage waveform of a node to a WAV file.")
+    parser.add_argument("--wav-node", help="Node name to export when --save-node-wav is used.")
+    parser.add_argument("--wav-reference-node", default="0", help="Reference node for WAV export. Defaults to ground.")
+    parser.add_argument("--wav-no-normalize", action="store_true", help="Do not normalize the exported WAV amplitude.")
     parser.add_argument("--maxwell-mode", choices=("tmz", "tez"), default="tmz", help="Maxwell solver mode.")
     parser.add_argument(
         "--field-layer",
@@ -193,6 +203,16 @@ def main() -> None:
         _save_fdtd(circuit, result, args.field_layer, args.save_fdtd)
     if args.save_maxwell:
         _save_maxwell(circuit, result, args.field_layer, args.save_maxwell, args.maxwell_mode)
+    if args.save_node_wav:
+        if not args.wav_node:
+            raise SystemExit("--save-node-wav requires --wav-node")
+        _save_node_wav(
+            result,
+            node=args.wav_node,
+            reference_node=args.wav_reference_node,
+            target=args.save_node_wav,
+            normalize=not args.wav_no_normalize,
+        )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from .component import Component, TwoTerminalComponent
+from .audio_io import export_result_node_wav, load_audio_mono, load_wav_mono, result_node_waveform, save_wav_mono
 from .components import (
     Ammeter,
     COMPONENT_LIBRARY,
@@ -21,6 +22,7 @@ from .components import (
     ToggleSwitch,
     Varistor,
     Voltmeter,
+    WavSource,
     create_component,
 )
 from .engine import Circuit, SimulationResult
@@ -49,6 +51,11 @@ __all__ = [
     "Circuit",
     "Component",
     "TwoTerminalComponent",
+    "load_wav_mono",
+    "load_audio_mono",
+    "save_wav_mono",
+    "result_node_waveform",
+    "export_result_node_wav",
     "SimulationResult",
     "FieldSnapshot",
     "FieldWaveSequence",
@@ -68,6 +75,7 @@ __all__ = [
     "PhysiWire",
     "PhysiBattery",
     "RealACGenerator",
+    "WavSource",
     "PulseGenerator",
     "SchockleyDiode",
     "LED_ImageActive",

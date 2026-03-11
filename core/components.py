@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from .audio_io import load_audio_mono
 from .component import Component, TwoTerminalComponent
 from .physics import (
     CHEMISTRY_CURVES,
@@ -545,6 +546,94 @@ class RealACGenerator(TwoTerminalComponent):
     def observe(self) -> dict[str, Any]:
         data = super().observe()
         data.update({"emf_v": float(self.instantaneous_emf_v), "frequency_hz": float(self.frequency_hz)})
+        return data
+
+
+class WavSource(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        wav_path: str | None = None,
+        audio_path: str | None = None,
+        amplitude_v: float = 1.0,
+        dc_bias_v: float = 0.0,
+        channel: int = 0,
+        loop: bool = False,
+        start_time_s: float = 0.0,
+        internal_resistance_ohm: float = 0.5,
+        remove_dc: bool = True,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        source_path = audio_path if audio_path not in {None, ""} else wav_path
+        if source_path in {None, ""}:
+            raise ValueError(f"WAV Source {name} requires wav_path or audio_path.")
+        self.audio_path = str(source_path)
+        self.wav_path = self.audio_path
+        self.amplitude_v = amplitude_v
+        self.dc_bias_v = dc_bias_v
+        self.channel = max(int(channel), 0)
+        self.loop = bool(loop)
+        self.start_time_s = float(start_time_s)
+        self.internal_resistance_ohm = max(float(internal_resistance_ohm), 1.0e-6)
+        self.remove_dc = bool(remove_dc)
+        try:
+            self.sample_rate_hz, normalized_samples = load_audio_mono(
+                self.audio_path,
+                channel=self.channel,
+                remove_dc=self.remove_dc,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"WAV Source {name} could not load '{self.audio_path}': {exc}") from exc
+        self.signal_v = np.asarray(normalized_samples * self.amplitude_v, dtype=float)
+        self.signal_duration_s = self.signal_v.size / max(self.sample_rate_hz, 1)
+        self.instantaneous_emf_v = self.dc_bias_v
+        self.heat_capacity_j_per_k = 6.5
+        self.thermal_resistance_k_per_w = 18.0
+        self.contact_thermal_resistance_k_per_w = 95.0
+        self.calibrate_thermal_network(case_fraction=0.58, junction_fraction=0.22)
+
+    def emf(self, time_s: float) -> float:
+        if self.signal_v.size == 0:
+            return self.dc_bias_v
+        local_time_s = time_s - self.start_time_s
+        if local_time_s < 0.0:
+            return self.dc_bias_v
+        if self.loop:
+            if self.signal_duration_s <= 0.0:
+                return self.dc_bias_v
+            local_time_s %= self.signal_duration_s
+        elif local_time_s >= self.signal_duration_s:
+            return self.dc_bias_v
+        sample_position = local_time_s * self.sample_rate_hz
+        left_index = min(int(math.floor(sample_position)), self.signal_v.size - 1)
+        right_index = min(left_index + 1, self.signal_v.size - 1)
+        mix = sample_position - left_index
+        sample_v = (1.0 - mix) * self.signal_v[left_index] + mix * self.signal_v[right_index]
+        return self.dc_bias_v + sample_v
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del dt_s
+        self.instantaneous_emf_v = self.emf(time_s)
+        conductance = 1.0 / self.internal_resistance_ohm
+        current = conductance * voltage_v - conductance * self.instantaneous_emf_v
+        return current, conductance
+
+    def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
+        super().commit(terminal_voltages, time_s, dt_s)
+        self.integrate_temperature(self.last_current_a * self.last_current_a * self.internal_resistance_ohm, dt_s)
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update(
+            {
+                "emf_v": float(self.instantaneous_emf_v),
+                "sample_rate_hz": float(self.sample_rate_hz),
+                "signal_duration_s": float(self.signal_duration_s),
+            }
+        )
         return data
 
 
@@ -1472,6 +1561,19 @@ class ToggleSwitch(TwoTerminalComponent):
 COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
     "Battery": (PhysiBattery, {"nominal_voltage_v": 9.0, "capacity_mah": 550.0, "chemistry": "alkaline", "internal_resistance_ohm": 1.2}),
     "AC Generator": (RealACGenerator, {"amplitude_v": 5.0, "frequency_hz": 1000.0, "internal_resistance_ohm": 0.5}),
+    "WAV Source": (
+        WavSource,
+        {
+            "wav_path": "examples/audio_assets/test_tone.wav",
+            "amplitude_v": 1.0,
+            "dc_bias_v": 0.0,
+            "channel": 0,
+            "loop": False,
+            "start_time_s": 0.0,
+            "internal_resistance_ohm": 0.5,
+            "remove_dc": True,
+        },
+    ),
     "Pulse Generator": (
         PulseGenerator,
         {
@@ -1570,6 +1672,7 @@ COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
 COMPONENT_TERMINALS: dict[str, tuple[str, ...]] = {
     "Battery": ("positive", "negative"),
     "AC Generator": ("positive", "negative"),
+    "WAV Source": ("positive", "negative"),
     "Pulse Generator": ("positive", "negative"),
     "Resistor": ("positive", "negative"),
     "Thermistor": ("positive", "negative"),

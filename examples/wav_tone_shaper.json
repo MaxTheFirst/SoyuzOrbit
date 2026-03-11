@@ -1,0 +1,539 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          90.0,
+          520.0
+        ]
+      ],
+      "x": 90.0,
+      "y": 520.0
+    },
+    {
+      "component_id": 2,
+      "kind": "WAV Source",
+      "name": "WAV_IN",
+      "params": {
+        "amplitude_v": 2.8,
+        "channel": 0,
+        "dc_bias_v": 0.0,
+        "internal_resistance_ohm": 0.35,
+        "loop": false,
+        "remove_dc": true,
+        "start_time_s": 0.0,
+        "wav_path": "audio_assets/test_tone.wav"
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          106.0,
+          180.0
+        ],
+        [
+          214.0,
+          180.0
+        ]
+      ],
+      "x": 160.0,
+      "y": 180.0
+    },
+    {
+      "component_id": 3,
+      "kind": "Resistor",
+      "name": "R_IN",
+      "params": {
+        "resistance_ohm": 330.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          306.0,
+          180.0
+        ],
+        [
+          414.0,
+          180.0
+        ]
+      ],
+      "x": 360.0,
+      "y": 180.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Capacitor",
+      "name": "C_SHAPE",
+      "params": {
+        "capacitance_f": 3.3e-07,
+        "esr_ohm": 0.05,
+        "leak_resistance_ohm": 3000000.0,
+        "max_voltage_v": 12.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          306.0,
+          360.0
+        ],
+        [
+          414.0,
+          360.0
+        ]
+      ],
+      "x": 360.0,
+      "y": 360.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Resistor",
+      "name": "R_DRIVE",
+      "params": {
+        "resistance_ohm": 120.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          546.0,
+          180.0
+        ],
+        [
+          654.0,
+          180.0
+        ]
+      ],
+      "x": 600.0,
+      "y": 180.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Diode",
+      "name": "D_CLIP_POS",
+      "params": {
+        "breakdown_voltage_v": 100.0,
+        "forward_drop_v": 0.48,
+        "shunt_resistance_ohm": 1000000000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          766.0,
+          120.0
+        ],
+        [
+          874.0,
+          120.0
+        ]
+      ],
+      "x": 820.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 7,
+      "kind": "Diode",
+      "name": "D_CLIP_NEG",
+      "params": {
+        "breakdown_voltage_v": 100.0,
+        "forward_drop_v": 0.48,
+        "shunt_resistance_ohm": 1000000000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          766.0,
+          320.0
+        ],
+        [
+          874.0,
+          320.0
+        ]
+      ],
+      "x": 820.0,
+      "y": 320.0
+    },
+    {
+      "component_id": 8,
+      "kind": "Resistor",
+      "name": "R_LOAD",
+      "params": {
+        "resistance_ohm": 1800.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          986.0,
+          260.0
+        ],
+        [
+          1094.0,
+          260.0
+        ]
+      ],
+      "x": 1040.0,
+      "y": 260.0
+    },
+    {
+      "component_id": 9,
+      "kind": "Capacitor",
+      "name": "C_OUT",
+      "params": {
+        "capacitance_f": 1e-07,
+        "esr_ohm": 0.05,
+        "leak_resistance_ohm": 4000000.0,
+        "max_voltage_v": 12.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          1166.0,
+          260.0
+        ],
+        [
+          1274.0,
+          260.0
+        ]
+      ],
+      "x": 1220.0,
+      "y": 260.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "WAV tone shaper",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 4.5351473922902495e-05,
+    "duration_s": 0.72
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 6,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 7,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 4
+    },
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 8,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 5
+    },
+    {
+      "a": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 9,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 6
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 7
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 8
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 9
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 10
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 7,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 11
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 8,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 12
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 9,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {
+        "max_segments": 1,
+        "segment_length_target_m": 1.0
+      },
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 13
+    }
+  ]
+}
