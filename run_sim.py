@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Iterable
 
 from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
+from core.result_plots import PLOT_PANEL_ORDER, available_plot_panel_ids, render_result_figure
 from core.project import load_project
 from core.engine import load_example_module
 
@@ -34,12 +34,6 @@ def _load_circuit_source(source: str):
     if not hasattr(module, "build_circuit"):
         raise SystemExit(f"{source} does not export build_circuit()")
     return module, module.build_circuit()
-
-
-def _iter_current_keys(observables: dict[str, Iterable[float]]) -> list[str]:
-    preferred = [key for key in observables if key == "current_a"]
-    extra = [key for key in observables if key.endswith("current_a") and key not in preferred]
-    return preferred + extra
 
 
 def _display_name(name: str) -> str:
@@ -102,64 +96,71 @@ def _save_maxwell(circuit, result, layer: str, target: str, mode: str) -> None:
     )
 
 
-def _plot_result(result, plot_currents: bool, plot_temp: bool, plot_nodes: bool, save_plot: str | None) -> None:
+def _selected_plot_panels(
+    result,
+    *,
+    plot_nodes: bool,
+    plot_currents: bool,
+    plot_temp: bool,
+    plot_voltages: bool,
+    plot_surface_temp: bool,
+    plot_power: bool,
+    plot_charge: bool,
+    plot_state: bool,
+    plot_all: bool,
+) -> list[str]:
+    selected: list[str] = []
+    if plot_all:
+        selected.extend(available_plot_panel_ids(result))
+    if plot_nodes:
+        selected.append("nodes")
+    if plot_currents:
+        selected.append("currents")
+    if plot_voltages:
+        selected.append("voltages")
+    if plot_temp:
+        selected.append("temperature")
+    if plot_surface_temp:
+        selected.append("surface_temperature")
+    if plot_power:
+        selected.append("power")
+    if plot_charge:
+        selected.append("charge")
+    if plot_state:
+        selected.append("state")
+    unique: list[str] = []
+    for panel_id in selected:
+        if panel_id not in PLOT_PANEL_ORDER:
+            continue
+        if panel_id not in unique:
+            unique.append(panel_id)
+    return unique
+
+
+def _plot_result(result, panel_ids: list[str], save_plot: str | None) -> None:
     import matplotlib.pyplot as plt
 
-    panels = []
-    if plot_nodes:
-        panels.append("nodes")
-    if plot_currents:
-        panels.append("currents")
-    if plot_temp:
-        panels.append("temperature")
-    if not panels:
+    if not panel_ids:
+        if save_plot:
+            raise SystemExit(
+                "No plot panels selected. Use --plot-all or at least one of "
+                "--plot-nodes, --plot-currents, --plot-voltages, --plot-temp, "
+                "--plot-surface-temp, --plot-power, --plot-charge, --plot-state."
+            )
         return
 
-    fig, axes = plt.subplots(len(panels), 1, figsize=(11, 3.8 * len(panels)), squeeze=False)
-    axes_flat = axes.ravel()
-    panel_index = 0
+    fig = plt.figure()
+    rendered_panels = render_result_figure(fig, result, panel_ids)
+    if not rendered_panels:
+        raise SystemExit("Selected plot panels have no data for this simulation.")
 
-    if plot_nodes:
-        ax = axes_flat[panel_index]
-        for node, values in result.node_voltages.items():
-            ax.plot(result.time_s, values, label=node)
-        ax.set_title("Node voltages")
-        ax.set_xlabel("Time, s")
-        ax.set_ylabel("V")
-        ax.grid(True, alpha=0.3)
-        ax.legend(loc="best")
-        panel_index += 1
-
-    if plot_currents:
-        ax = axes_flat[panel_index]
-        for component_name, observables in result.component_observables.items():
-            for key in _iter_current_keys(observables):
-                ax.plot(result.time_s, observables[key], label=f"{_display_name(component_name)}:{key}")
-        ax.set_title("Component currents")
-        ax.set_xlabel("Time, s")
-        ax.set_ylabel("A")
-        ax.grid(True, alpha=0.3)
-        ax.legend(loc="best", ncols=2)
-        panel_index += 1
-
-    if plot_temp:
-        ax = axes_flat[panel_index]
-        for component_name, observables in result.component_observables.items():
-            if "temperature_c" in observables:
-                ax.plot(result.time_s, observables["temperature_c"], label=_display_name(component_name))
-        ax.set_title("Component temperatures")
-        ax.set_xlabel("Time, s")
-        ax.set_ylabel("degC")
-        ax.grid(True, alpha=0.3)
-        ax.legend(loc="best", ncols=2)
-
-    fig.tight_layout()
     if save_plot:
         path = Path(save_plot)
         fig.savefig(path, dpi=160)
         print(f"Saved plot to {path}")
     else:
         plt.show()
+    plt.close(fig)
 
 
 def main() -> None:
@@ -168,8 +169,14 @@ def main() -> None:
     parser.add_argument("--duration", type=float, help="Override simulation duration in seconds.")
     parser.add_argument("--dt", type=float, help="Override timestep in seconds.")
     parser.add_argument("--plot-currents", action="store_true", help="Plot component currents.")
+    parser.add_argument("--plot-voltages", action="store_true", help="Plot component voltages and source EMF.")
     parser.add_argument("--plot-temp", action="store_true", help="Plot component temperatures.")
+    parser.add_argument("--plot-surface-temp", action="store_true", help="Plot component surface temperatures.")
+    parser.add_argument("--plot-power", action="store_true", help="Plot component power dissipation.")
+    parser.add_argument("--plot-charge", action="store_true", help="Plot charge-related observables.")
+    parser.add_argument("--plot-state", action="store_true", help="Plot unitless states such as brightness, SOC, overload flags.")
     parser.add_argument("--plot-nodes", action="store_true", help="Plot all node voltages.")
+    parser.add_argument("--plot-all", action="store_true", help="Plot all available panels for the simulation result.")
     parser.add_argument("--save-plot", help="Save plots to a file instead of opening a window.")
     parser.add_argument("--save-field", help="Save a quasi-static field map image to a file.")
     parser.add_argument("--save-fdtd", help="Save a simplified FDTD wave animation to a GIF file.")
@@ -186,7 +193,19 @@ def main() -> None:
     source, circuit = _load_circuit_source(args.example)
     result = circuit.simulate(_pick_duration(source, args.duration), _pick_dt(source, args.dt))
     _print_summary(result)
-    _plot_result(result, args.plot_currents, args.plot_temp, args.plot_nodes, args.save_plot)
+    plot_panels = _selected_plot_panels(
+        result,
+        plot_nodes=args.plot_nodes,
+        plot_currents=args.plot_currents,
+        plot_temp=args.plot_temp,
+        plot_voltages=args.plot_voltages,
+        plot_surface_temp=args.plot_surface_temp,
+        plot_power=args.plot_power,
+        plot_charge=args.plot_charge,
+        plot_state=args.plot_state,
+        plot_all=args.plot_all,
+    )
+    _plot_result(result, plot_panels, args.save_plot)
     if args.save_field:
         _save_field(circuit, result, args.field_layer, args.save_field)
     if args.save_fdtd:

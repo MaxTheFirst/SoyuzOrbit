@@ -30,6 +30,7 @@ from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d,
 from .canvas import CircuitScene, CircuitView, ComponentItem, FieldPortItem, MaterialRegionItem, WireItem
 from .components_visual import build_qicon, default_params, default_visual_state, template_for
 from .field_dialog import FieldPreviewDialog
+from .result_plot_dialog import ResultPlotDialog
 
 HIDDEN_USER_PARAMS = {"chemistry"}
 
@@ -369,6 +370,8 @@ class MainWindow(QMainWindow):
         load_button.clicked.connect(self._load_project)
         start_button = QPushButton("Старт")
         start_button.clicked.connect(self._run_simulation)
+        plots_button = QPushButton("Графики")
+        plots_button.clicked.connect(self._show_result_plots)
         field_button = QPushButton("Карта поля")
         field_button.clicked.connect(self._show_field_map)
         fdtd_button = QPushButton("FDTD волна")
@@ -388,10 +391,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(save_button, 7, 0)
         layout.addWidget(load_button, 7, 1)
         layout.addWidget(start_button, 8, 0)
-        layout.addWidget(field_button, 8, 1)
-        layout.addWidget(fdtd_button, 9, 0, 1, 2)
-        layout.addWidget(maxwell_button, 10, 0)
-        layout.addWidget(maxwell_tez_button, 10, 1)
+        layout.addWidget(plots_button, 8, 1)
+        layout.addWidget(field_button, 9, 0, 1, 2)
+        layout.addWidget(fdtd_button, 10, 0, 1, 2)
+        layout.addWidget(maxwell_button, 11, 0)
+        layout.addWidget(maxwell_tez_button, 11, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -667,34 +671,40 @@ class MainWindow(QMainWindow):
 
     def _run_simulation(self) -> None:
         try:
-            self._apply_animation_speed()
-            duration, dt = self._parse_simulation_settings()
-            project = self.scene.build_project("Схема на холсте", duration, dt)
-            circuit = project.to_circuit()
-            result = circuit.simulate(duration, dt)
-            self.last_circuit = circuit
-            self.last_result = result
-            self.last_field_snapshot = None
-            self.last_fdtd_sequence = None
-            self.last_maxwell_sequence = None
-            self.scene.play_result(result)
-            self._sync_animation_button()
-            self._write_log(result)
+            self._simulate_scene()
             self.statusBar().showMessage("Симуляция завершена. Анимация запущена и будет повторяться по кругу.")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка симуляции", str(exc))
 
+    def _simulate_scene(self):
+        self._apply_animation_speed()
+        duration, dt = self._parse_simulation_settings()
+        project = self.scene.build_project("Схема на холсте", duration, dt)
+        circuit = project.to_circuit()
+        result = circuit.simulate(duration, dt)
+        self.last_circuit = circuit
+        self.last_result = result
+        self.last_field_snapshot = None
+        self.last_fdtd_sequence = None
+        self.last_maxwell_sequence = None
+        self.scene.play_result(result)
+        self._sync_animation_button()
+        self._write_log(result)
+        return circuit, result
+
+    def _show_result_plots(self) -> None:
+        try:
+            _, result = self._simulate_scene()
+            dialog = ResultPlotDialog(result, self)
+            dialog.exec()
+            self.statusBar().showMessage("Графики рассчитаны.")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка графиков", str(exc))
+
     def _show_field_map(self) -> None:
         try:
-            self._apply_animation_speed()
-            duration, dt = self._parse_simulation_settings()
-            project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
-            self.last_field_snapshot = solve_quasi_static_field(self.last_circuit, self.last_result)
+            circuit, result = self._simulate_scene()
+            self.last_field_snapshot = solve_quasi_static_field(circuit, result)
             dialog = FieldPreviewDialog(self.last_field_snapshot, self)
             dialog.exec()
             self.statusBar().showMessage("Карта поля рассчитана.")
@@ -703,15 +713,8 @@ class MainWindow(QMainWindow):
 
     def _show_fdtd_wave(self) -> None:
         try:
-            self._apply_animation_speed()
-            duration, dt = self._parse_simulation_settings()
-            project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
-            self.last_fdtd_sequence = simulate_fdtd_wave(self.last_circuit, self.last_result)
+            circuit, result = self._simulate_scene()
+            self.last_fdtd_sequence = simulate_fdtd_wave(circuit, result)
             dialog = FieldPreviewDialog(self.last_fdtd_sequence, self)
             dialog.exec()
             self.statusBar().showMessage("FDTD-волна рассчитана.")
@@ -720,15 +723,8 @@ class MainWindow(QMainWindow):
 
     def _show_maxwell_tmz_wave(self) -> None:
         try:
-            self._apply_animation_speed()
-            duration, dt = self._parse_simulation_settings()
-            project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
-            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result, mode="tmz")
+            circuit, result = self._simulate_scene()
+            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(circuit, result, mode="tmz")
             dialog = FieldPreviewDialog(self.last_maxwell_sequence, self)
             dialog.exec()
             self.statusBar().showMessage("Maxwell TMz рассчитан.")
@@ -737,15 +733,8 @@ class MainWindow(QMainWindow):
 
     def _show_maxwell_tez_wave(self) -> None:
         try:
-            self._apply_animation_speed()
-            duration, dt = self._parse_simulation_settings()
-            project = self.scene.build_project("Схема на холсте", duration, dt)
-            self.last_circuit = project.to_circuit()
-            self.last_result = self.last_circuit.simulate(duration, dt)
-            self.scene.play_result(self.last_result)
-            self._sync_animation_button()
-            self._write_log(self.last_result)
-            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(self.last_circuit, self.last_result, mode="tez")
+            circuit, result = self._simulate_scene()
+            self.last_maxwell_sequence = simulate_full_wave_maxwell_2d(circuit, result, mode="tez")
             dialog = FieldPreviewDialog(self.last_maxwell_sequence, self)
             dialog.exec()
             self.statusBar().showMessage("Maxwell TEz рассчитан.")
