@@ -5,7 +5,7 @@ import time
 from typing import Any
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QTransform
+from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPainterPathStroker, QPen, QTransform
 from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -321,6 +321,19 @@ class WireItem(QGraphicsPathItem):
 
     def route_points_data(self) -> list[tuple[float, float]]:
         return [(float(point.x()), float(point.y())) for point in self.route_points]
+
+    def _hit_path(self) -> QPainterPath:
+        stroker = QPainterPathStroker()
+        stroker.setWidth(max(self._line_width() + 8.0, 14.0))
+        stroker.setCapStyle(Qt.PenCapStyle.RoundCap)
+        stroker.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        return stroker.createStroke(self.path())
+
+    def shape(self) -> QPainterPath:  # noqa: N802
+        return self._hit_path()
+
+    def boundingRect(self) -> QRectF:  # noqa: N802
+        return self._hit_path().boundingRect()
 
     def itemChange(self, change, value):  # noqa: N802
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
