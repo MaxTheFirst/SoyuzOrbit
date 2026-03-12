@@ -304,22 +304,17 @@ class MainWindow(QMainWindow):
             "Junction",
             "Battery",
             "Resistor",
-            "Thermistor",
-            "Photoresistor",
             "Ammeter",
             "Voltmeter",
             "Capacitor",
             "Inductor",
             "Diode",
             "LED",
-            "Varistor",
             "Fuse",
             "Bulb",
             "Switch",
             "AC Generator",
             "Pulse Generator",
-            "MOSFET",
-            "OpAmp",
         ]
         for index, kind in enumerate(component_order):
             state = default_visual_state(kind)
@@ -348,12 +343,6 @@ class MainWindow(QMainWindow):
         wire_button.clicked.connect(self.scene.set_connect_mode)
         delete_button = QPushButton("Удалить выделенное")
         delete_button.clicked.connect(self.scene.delete_selected)
-        route_button = QPushButton("Трассировка")
-        route_button.clicked.connect(self.scene.set_route_mode)
-        material_button = QPushButton("Среда")
-        material_button.clicked.connect(self.scene.set_place_material_mode)
-        port_button = QPushButton("Порт поля")
-        port_button.clicked.connect(self.scene.set_place_port_mode)
         clear_button = QPushButton("Очистить")
         clear_button.clicked.connect(self.scene.clear_circuit)
         self.animation_toggle_button = QPushButton("Пауза")
@@ -366,27 +355,15 @@ class MainWindow(QMainWindow):
         start_button.clicked.connect(self._run_simulation)
         field_button = QPushButton("Карта поля")
         field_button.clicked.connect(self._show_field_map)
-        fdtd_button = QPushButton("FDTD волна")
-        fdtd_button.clicked.connect(self._show_fdtd_wave)
-        maxwell_button = QPushButton("Maxwell TMz")
-        maxwell_button.clicked.connect(self._show_maxwell_tmz_wave)
-        maxwell_tez_button = QPushButton("Maxwell TEz")
-        maxwell_tez_button.clicked.connect(self._show_maxwell_tez_wave)
 
         layout.addWidget(wire_button, 2, 0)
         layout.addWidget(delete_button, 2, 1)
-        layout.addWidget(route_button, 3, 0, 1, 2)
-        layout.addWidget(material_button, 4, 0)
-        layout.addWidget(port_button, 4, 1)
         layout.addWidget(clear_button, 5, 0)
         layout.addWidget(self.animation_toggle_button, 5, 1)
         layout.addWidget(save_button, 6, 0)
         layout.addWidget(load_button, 6, 1)
         layout.addWidget(start_button, 7, 0)
         layout.addWidget(field_button, 7, 1)
-        layout.addWidget(fdtd_button, 8, 0, 1, 2)
-        layout.addWidget(maxwell_button, 9, 0)
-        layout.addWidget(maxwell_tez_button, 9, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
