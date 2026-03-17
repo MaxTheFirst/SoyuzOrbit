@@ -1,0 +1,290 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 170.0,
+      "y": 380.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Pulse Generator",
+      "name": "VIN",
+      "params": {
+        "duty_cycle": 0.5,
+        "fall_time_s": 0.05,
+        "high_voltage_v": 2.5,
+        "internal_resistance_ohm": 1.0,
+        "low_voltage_v": 0.5,
+        "period_s": 0.4,
+        "pulse_width_s": 0.2,
+        "rise_time_s": 0.05
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 170.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 3,
+      "kind": "OpAmp",
+      "name": "OA1",
+      "params": {
+        "dominant_pole_hz": 20.0,
+        "output_current_limit_a": 0.05
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 470.0,
+      "y": 150.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Resistor",
+      "name": "R_LOAD",
+      "params": {
+        "resistance_ohm": 1000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 780.0,
+      "y": 150.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Voltmeter",
+      "name": "VM_IN",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 470.0,
+      "y": 320.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Voltmeter",
+      "name": "VM_OUT",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 780.0,
+      "y": 320.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0439 \u0443\u0441\u0438\u043b\u0438\u0442\u0435\u043b\u044c \u043a\u0430\u043a \u043f\u043e\u0432\u0442\u043e\u0440\u0438\u0442\u0435\u043b\u044c",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 0.001,
+    "duration_s": 1.0
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 4
+    },
+    {
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 5
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 6
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 7
+    },
+    {
+      "a": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 8
+    },
+    {
+      "a": {
+        "component_id": 6,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 9
+    }
+  ]
+}

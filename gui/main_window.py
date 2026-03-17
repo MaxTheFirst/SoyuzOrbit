@@ -166,6 +166,7 @@ PARAMETER_LABELS = {
     "input_capacitance_f": "Входная емкость, Ф",
     "lead_inductance_h": "Индуктивность выводов, Гн",
     "closed": "Замкнут",
+    "position_b": "Положение B",
     "on_resistance_ohm": "Сопротивление вкл., Ом",
     "off_resistance_ohm": "Сопротивление выкл., Ом",
 }
@@ -176,6 +177,9 @@ TERMINAL_LABELS = {
     "drain": "Сток",
     "gate": "Затвор",
     "source": "Исток",
+    "common": "Общий",
+    "throw_a": "Контакт A",
+    "throw_b": "Контакт B",
     "plus": "Неинвертирующий",
     "minus": "Инвертирующий",
     "out": "Выход",
@@ -215,6 +219,8 @@ class MainWindow(QMainWindow):
         self.property_inputs: dict[str, QLineEdit] = {}
         self.library_buttons: list[QPushButton] = []
         self.animation_toggle_button: QPushButton | None = None
+        self.animation_reset_button: QPushButton | None = None
+        self.animation_info_label: QLabel | None = None
         self.last_circuit = None
         self.last_result = None
         self.last_field_snapshot = None
@@ -225,6 +231,7 @@ class MainWindow(QMainWindow):
         self.scene.selection_changed.connect(self._on_selection_changed)
         self.scene.status_changed.connect(self.statusBar().showMessage)
         self.scene.animation_state_changed.connect(self._sync_animation_button)
+        self.scene.animation_frame_changed.connect(self._update_animation_info)
         self.view = CircuitView(self.scene, self)
 
         self.duration_input = QLineEdit("0.03")
@@ -258,6 +265,7 @@ class MainWindow(QMainWindow):
         self.properties_scroll.setWidget(self.properties_panel)
 
         self._build_ui()
+        self._build_status_bar()
         self._clear_properties("Выбери элемент, чтобы менять его параметры.")
         self.statusBar().showMessage("Готово. Delete удаляет объект или провод. Esc отменяет добавление, соединение и трассировку.")
 
@@ -273,6 +281,11 @@ class MainWindow(QMainWindow):
         self.sidebar_scroll.setWidget(sidebar)
         self.sidebar_scroll.setFixedWidth(396)
         layout.addWidget(self.sidebar_scroll)
+
+    def _build_status_bar(self) -> None:
+        self.animation_info_label = QLabel("Кадр: -- / -- | t = ---.--- с")
+        self.statusBar().addPermanentWidget(self.animation_info_label)
+        self._update_animation_info(-1, 0, 0.0)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -320,6 +333,7 @@ class MainWindow(QMainWindow):
             "Fuse",
             "Bulb",
             "Switch",
+            "SPDT Switch",
             "AC Generator",
             "Pulse Generator",
             "MOSFET",
@@ -364,6 +378,8 @@ class MainWindow(QMainWindow):
         clear_button.clicked.connect(self.scene.clear_circuit)
         self.animation_toggle_button = QPushButton("Пауза")
         self.animation_toggle_button.clicked.connect(self._toggle_animation)
+        self.animation_reset_button = QPushButton("Сброс анимации")
+        self.animation_reset_button.clicked.connect(self._reset_animation)
         save_button = QPushButton("Сохранить JSON")
         save_button.clicked.connect(self._save_project)
         load_button = QPushButton("Загрузить JSON")
@@ -388,14 +404,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(port_button, 5, 1)
         layout.addWidget(clear_button, 6, 0)
         layout.addWidget(self.animation_toggle_button, 6, 1)
-        layout.addWidget(save_button, 7, 0)
-        layout.addWidget(load_button, 7, 1)
-        layout.addWidget(start_button, 8, 0)
-        layout.addWidget(plots_button, 8, 1)
-        layout.addWidget(field_button, 9, 0, 1, 2)
-        layout.addWidget(fdtd_button, 10, 0, 1, 2)
-        layout.addWidget(maxwell_button, 11, 0)
-        layout.addWidget(maxwell_tez_button, 11, 1)
+        layout.addWidget(self.animation_reset_button, 7, 0, 1, 2)
+        layout.addWidget(save_button, 8, 0)
+        layout.addWidget(load_button, 8, 1)
+        layout.addWidget(start_button, 9, 0)
+        layout.addWidget(plots_button, 9, 1)
+        layout.addWidget(field_button, 10, 0, 1, 2)
+        layout.addWidget(fdtd_button, 11, 0, 1, 2)
+        layout.addWidget(maxwell_button, 12, 0)
+        layout.addWidget(maxwell_tez_button, 12, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -642,6 +659,22 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Анимация еще не рассчитана.")
             return
         self.statusBar().showMessage(f"Анимация идет на скорости x{speed:g}." if active else "Анимация поставлена на паузу.")
+
+    def _reset_animation(self) -> None:
+        reset = self.scene.reset_animation()
+        self._sync_animation_button()
+        if not reset:
+            self.statusBar().showMessage("Анимации для сброса пока нет.")
+            return
+        self.statusBar().showMessage("Анимация остановлена и возвращена к первому кадру.")
+
+    def _update_animation_info(self, frame_index: int, total_frames: int, time_s: float) -> None:
+        if self.animation_info_label is None:
+            return
+        if total_frames <= 0 or frame_index < 0:
+            self.animation_info_label.setText("Кадр: -- / -- | t = ---.--- с")
+            return
+        self.animation_info_label.setText(f"Кадр: {frame_index + 1} / {total_frames} | t = {time_s:.3f} с")
 
     def _save_project(self) -> None:
         try:

@@ -58,6 +58,7 @@ TEMPLATES: dict[str, VisualTemplate] = {
     "Ammeter": VisualTemplate("Ammeter", "Амперметр", "Ammeter", (128, 92), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Ammeter"], COMPONENT_LIBRARY["Ammeter"][1].copy()),
     "Voltmeter": VisualTemplate("Voltmeter", "Вольтметр", "Voltmeter", (128, 92), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Voltmeter"], COMPONENT_LIBRARY["Voltmeter"][1].copy()),
     "Switch": VisualTemplate("Switch", "Переключатель", "Switch", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Switch"], COMPONENT_LIBRARY["Switch"][1].copy()),
+    "SPDT Switch": VisualTemplate("SPDT Switch", "Перекидной переключатель", "SPDT Switch", (132, 92), ((0.08, 0.5), (0.92, 0.28), (0.92, 0.72)), COMPONENT_TERMINALS["SPDT Switch"], COMPONENT_LIBRARY["SPDT Switch"][1].copy()),
     "MOSFET": VisualTemplate("MOSFET", "MOSFET", "MOSFET", (128, 92), ((0.25, 0.15), (0.12, 0.55), (0.25, 0.85)), COMPONENT_TERMINALS["MOSFET"], COMPONENT_LIBRARY["MOSFET"][1].copy()),
     "OpAmp": VisualTemplate("OpAmp", "ОУ", "OpAmp", (128, 92), ((0.12, 0.3), (0.12, 0.7), (0.88, 0.5)), COMPONENT_TERMINALS["OpAmp"], COMPONENT_LIBRARY["OpAmp"][1].copy()),
 }
@@ -83,6 +84,8 @@ def default_visual_state(kind: str) -> dict[str, Any]:
         state.update({"reading": 0.0, "overload": 0.0})
     if kind == "Switch":
         state.update({"closed": float(default_params(kind).get("closed", False))})
+    if kind == "SPDT Switch":
+        state.update({"position_b": float(default_params(kind).get("position_b", False))})
     return state
 
 
@@ -395,6 +398,32 @@ def _render_switch(template: VisualTemplate, state: dict[str, Any]) -> Image.Ima
     return image
 
 
+def _render_spdt_switch(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    cy = h / 2
+    top_y = h * 0.28
+    bottom_y = h * 0.72
+    right_x = w - 18
+    left_x = 18
+    contact_left = 44
+    contact_right = w - 42
+    position_b = bool(state.get("position_b", 0.0))
+    draw.line((left_x, cy, contact_left, cy), fill="#7b5f49", width=4)
+    draw.line((contact_right, top_y, right_x, top_y), fill="#7b5f49", width=4)
+    draw.line((contact_right, bottom_y, right_x, bottom_y), fill="#7b5f49", width=4)
+    draw.ellipse((contact_left - 6, cy - 6, contact_left + 6, cy + 6), fill="#475569")
+    draw.ellipse((contact_right - 6, top_y - 6, contact_right + 6, top_y + 6), fill="#475569")
+    draw.ellipse((contact_right - 6, bottom_y - 6, contact_right + 6, bottom_y + 6), fill="#475569")
+    target_y = bottom_y if position_b else top_y
+    arm_color = "#84a98c" if position_b else "#64748b"
+    draw.line((contact_left, cy, contact_right - 2, target_y), fill=arm_color, width=5)
+    draw.text((w / 2 - 10, 14), "A", fill="#334155")
+    draw.text((w / 2 - 10, h - 28), "B", fill="#334155")
+    return image
+
+
 def _render_mosfet(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
     image = _base_canvas(template, state)
     draw = ImageDraw.Draw(image)
@@ -449,6 +478,7 @@ RENDERERS = {
     "Ammeter": _render_ammeter,
     "Voltmeter": _render_voltmeter,
     "Switch": _render_switch,
+    "SPDT Switch": _render_spdt_switch,
     "MOSFET": _render_mosfet,
     "OpAmp": _render_opamp,
 }

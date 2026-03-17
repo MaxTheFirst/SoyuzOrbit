@@ -1,0 +1,276 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 170.0,
+      "y": 360.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Battery",
+      "name": "BAT1",
+      "params": {
+        "capacity_mah": 1200.0,
+        "internal_resistance_ohm": 0.15,
+        "nominal_voltage_v": 5.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 170.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 3,
+      "kind": "SPDT Switch",
+      "name": "SEL1",
+      "params": {
+        "position_b": false
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 420.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Resistor",
+      "name": "R_A",
+      "params": {
+        "resistance_ohm": 220.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 700.0,
+      "y": 60.0
+    },
+    {
+      "component_id": 5,
+      "kind": "LED",
+      "name": "LED_A",
+      "params": {
+        "color": "red",
+        "max_forward_current_a": 0.02
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 920.0,
+      "y": 60.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Resistor",
+      "name": "R_B",
+      "params": {
+        "resistance_ohm": 220.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 700.0,
+      "y": 210.0
+    },
+    {
+      "component_id": 7,
+      "kind": "LED",
+      "name": "LED_B",
+      "params": {
+        "color": "green",
+        "max_forward_current_a": 0.02
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 920.0,
+      "y": 210.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "\u041f\u0435\u0440\u0435\u043a\u0438\u0434\u043d\u043e\u0439 \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0430\u0442\u0435\u043b\u044c \u0438 \u0432\u044b\u0431\u043e\u0440 \u0432\u0435\u0442\u0432\u0438",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 0.0001,
+    "duration_s": 0.03
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 4
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 5
+    },
+    {
+      "a": {
+        "component_id": 6,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 7,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 6
+    },
+    {
+      "a": {
+        "component_id": 7,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 7
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 8
+    }
+  ]
+}

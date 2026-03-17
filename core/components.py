@@ -1469,6 +1469,64 @@ class ToggleSwitch(TwoTerminalComponent):
         return data
 
 
+class SPDTSwitch(Component):
+    terminal_labels = ("common", "throw_a", "throw_b")
+
+    def __init__(
+        self,
+        name: str,
+        common: str,
+        throw_a: str,
+        throw_b: str,
+        position_b: bool = False,
+        on_resistance_ohm: float = 0.01,
+        off_resistance_ohm: float = 1.0e9,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, [common, throw_a, throw_b], ambient_c)
+        self.position_b = bool(position_b)
+        self.on_resistance_ohm = max(on_resistance_ohm, 1.0e-9)
+        self.off_resistance_ohm = max(off_resistance_ohm, 1.0e-9)
+
+    def toggle(self) -> None:
+        self.position_b = not self.position_b
+
+    def currents(
+        self,
+        terminal_voltages: np.ndarray,
+        time_s: float,
+        dt_s: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del time_s, dt_s
+        g_on = 1.0 / self.on_resistance_ohm
+        g_off = 1.0 / self.off_resistance_ohm
+        g_a = g_off if self.position_b else g_on
+        g_b = g_on if self.position_b else g_off
+        vc, va, vb = (float(value) for value in terminal_voltages)
+        currents = np.array(
+            [
+                g_a * (vc - va) + g_b * (vc - vb),
+                g_a * (va - vc),
+                g_b * (vb - vc),
+            ],
+            dtype=float,
+        )
+        jacobian = np.array(
+            [
+                [g_a + g_b, -g_a, -g_b],
+                [-g_a, g_a, 0.0],
+                [-g_b, 0.0, g_b],
+            ],
+            dtype=float,
+        )
+        return currents, jacobian
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update({"position_b": float(self.position_b)})
+        return data
+
+
 COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
     "Battery": (PhysiBattery, {"nominal_voltage_v": 9.0, "capacity_mah": 550.0, "chemistry": "alkaline", "internal_resistance_ohm": 1.2}),
     "AC Generator": (RealACGenerator, {"amplitude_v": 5.0, "frequency_hz": 1000.0, "internal_resistance_ohm": 0.5}),
@@ -1564,6 +1622,7 @@ COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
     "Ammeter": (Ammeter, {"shunt_resistance_ohm": 0.01, "max_display_current_a": 10.0}),
     "Voltmeter": (Voltmeter, {"input_resistance_ohm": 1.0e7, "max_display_voltage_v": 300.0}),
     "Switch": (ToggleSwitch, {"closed": False}),
+    "SPDT Switch": (SPDTSwitch, {"position_b": False, "on_resistance_ohm": 0.01, "off_resistance_ohm": 1.0e9}),
 }
 
 
@@ -1587,6 +1646,7 @@ COMPONENT_TERMINALS: dict[str, tuple[str, ...]] = {
     "Ammeter": ("positive", "negative"),
     "Voltmeter": ("positive", "negative"),
     "Switch": ("positive", "negative"),
+    "SPDT Switch": ("common", "throw_a", "throw_b"),
     "Ground": ("ground",),
     "Junction": ("node",),
 }

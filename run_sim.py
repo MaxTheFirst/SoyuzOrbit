@@ -103,9 +103,12 @@ def _selected_plot_panels(
     plot_currents: bool,
     plot_temp: bool,
     plot_voltages: bool,
+    plot_power_temperature: bool,
     plot_surface_temp: bool,
     plot_power: bool,
+    plot_energy_storage: bool,
     plot_charge: bool,
+    plot_iv_xy: bool,
     plot_state: bool,
     plot_all: bool,
 ) -> list[str]:
@@ -118,14 +121,20 @@ def _selected_plot_panels(
         selected.append("currents")
     if plot_voltages:
         selected.append("voltages")
+    if plot_power_temperature:
+        selected.append("power_temperature")
     if plot_temp:
         selected.append("temperature")
     if plot_surface_temp:
         selected.append("surface_temperature")
     if plot_power:
         selected.append("power")
+    if plot_energy_storage:
+        selected.append("energy_storage")
     if plot_charge:
         selected.append("charge")
+    if plot_iv_xy:
+        selected.append("iv_xy")
     if plot_state:
         selected.append("state")
     unique: list[str] = []
@@ -144,8 +153,9 @@ def _plot_result(result, panel_ids: list[str], save_plot: str | None) -> None:
         if save_plot:
             raise SystemExit(
                 "No plot panels selected. Use --plot-all or at least one of "
-                "--plot-nodes, --plot-currents, --plot-voltages, --plot-temp, "
-                "--plot-surface-temp, --plot-power, --plot-charge, --plot-state."
+                "--plot-nodes, --plot-currents, --plot-voltages, --plot-power-temperature, "
+                "--plot-temp, --plot-surface-temp, --plot-power, --plot-energy-storage, "
+                "--plot-charge, --plot-iv-xy, --plot-state."
             )
         return
 
@@ -170,10 +180,13 @@ def main() -> None:
     parser.add_argument("--dt", type=float, help="Override timestep in seconds.")
     parser.add_argument("--plot-currents", action="store_true", help="Plot component currents.")
     parser.add_argument("--plot-voltages", action="store_true", help="Plot component voltages and source EMF.")
+    parser.add_argument("--plot-power-temperature", action="store_true", help="Plot component power and temperature on a combined panel.")
     parser.add_argument("--plot-temp", action="store_true", help="Plot component temperatures.")
     parser.add_argument("--plot-surface-temp", action="store_true", help="Plot component surface temperatures.")
     parser.add_argument("--plot-power", action="store_true", help="Plot component power dissipation.")
+    parser.add_argument("--plot-energy-storage", action="store_true", help="Plot charge and flux-linkage accumulation observables.")
     parser.add_argument("--plot-charge", action="store_true", help="Plot charge-related observables.")
+    parser.add_argument("--plot-iv-xy", action="store_true", help="Plot nonlinear I(U) XY curves for components that expose voltage and current.")
     parser.add_argument("--plot-state", action="store_true", help="Plot unitless states such as brightness, SOC, overload flags.")
     parser.add_argument("--plot-nodes", action="store_true", help="Plot all node voltages.")
     parser.add_argument("--plot-all", action="store_true", help="Plot all available panels for the simulation result.")
@@ -199,9 +212,12 @@ def main() -> None:
         plot_currents=args.plot_currents,
         plot_temp=args.plot_temp,
         plot_voltages=args.plot_voltages,
+        plot_power_temperature=args.plot_power_temperature,
         plot_surface_temp=args.plot_surface_temp,
         plot_power=args.plot_power,
+        plot_energy_storage=args.plot_energy_storage,
         plot_charge=args.plot_charge,
+        plot_iv_xy=args.plot_iv_xy,
         plot_state=args.plot_state,
         plot_all=args.plot_all,
     )

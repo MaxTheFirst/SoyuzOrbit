@@ -1,0 +1,158 @@
+{
+  "schema_version": 3,
+  "name": "RL-инерция тока на импульсах",
+  "settings": {
+    "duration_s": 0.5,
+    "dt_s": 0.0005
+  },
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "x": 160.0,
+      "y": 340.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Pulse Generator",
+      "name": "PULSE1",
+      "params": {
+        "high_voltage_v": 6.0,
+        "low_voltage_v": 0.0,
+        "period_s": 0.16,
+        "duty_cycle": 0.5,
+        "rise_time_s": 0.001,
+        "fall_time_s": 0.001,
+        "internal_resistance_ohm": 0.4
+      },
+      "x": 160.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 3,
+      "kind": "Ammeter",
+      "name": "AM1",
+      "params": {
+        "shunt_resistance_ohm": 0.01,
+        "max_display_current_a": 3.0
+      },
+      "x": 360.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Inductor",
+      "name": "L1",
+      "params": {
+        "inductance_h": 0.012,
+        "dc_resistance_ohm": 0.3,
+        "saturation_current_a": 5.0
+      },
+      "x": 560.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Resistor",
+      "name": "R1",
+      "params": {
+        "resistance_ohm": 10.0
+      },
+      "x": 760.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Voltmeter",
+      "name": "VM_R",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "x": 760.0,
+      "y": 260.0
+    }
+  ],
+  "material_regions": [],
+  "field_ports": [],
+  "wires": [
+    {
+      "wire_id": 1,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 2,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 3,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 5,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 4,
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 5,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 6,
+      "a": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 5,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 7,
+      "a": {
+        "component_id": 6,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    }
+  ]
+}

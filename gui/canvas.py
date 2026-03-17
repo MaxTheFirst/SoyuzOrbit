@@ -54,6 +54,7 @@ NAME_PREFIXES = {
     "Ammeter": "Амперметр",
     "Voltmeter": "Вольтметр",
     "Switch": "Переключатель",
+    "SPDT Switch": "Перекидной",
     "MOSFET": "MOSFET",
     "OpAmp": "ОУ",
     "FieldMaterial": "Среда",
@@ -579,6 +580,8 @@ class ComponentItem(QGraphicsObject):
             self.state["color"] = self.params.get("color", self.state.get("color", "red"))
         if kind == "Switch":
             self.state["closed"] = float(bool(self.params.get("closed", self.state.get("closed", 0.0))))
+        if kind == "SPDT Switch":
+            self.state["position_b"] = float(bool(self.params.get("position_b", self.state.get("position_b", 0.0))))
         self.pixmap = build_qpixmap(self.kind, self.state)
         self.label_item = QGraphicsSimpleTextItem(self.name, self)
         self.label_item.setZValue(30)
@@ -662,6 +665,8 @@ class ComponentItem(QGraphicsObject):
             self.state["color"] = updated["color"]
         if self.kind == "Switch" and "closed" in updated:
             self.state["closed"] = float(bool(updated["closed"]))
+        if self.kind == "SPDT Switch" and "position_b" in updated:
+            self.state["position_b"] = float(bool(updated["position_b"]))
         self.update_render()
 
     def apply_rotation(self, rotation_deg: float) -> None:
@@ -705,6 +710,14 @@ class ComponentItem(QGraphicsObject):
             if self.scene_controller is not None:
                 state_name = "замкнут" if closed else "разомкнут"
                 self.scene_controller.status_changed.emit(f"{self.name}: переключатель {state_name}.")
+        if self.kind == "SPDT Switch":
+            position_b = not bool(self.params.get("position_b", False))
+            self.params["position_b"] = position_b
+            self.state["position_b"] = float(position_b)
+            self.update_render()
+            if self.scene_controller is not None:
+                state_name = "B" if position_b else "A"
+                self.scene_controller.status_changed.emit(f"{self.name}: перекидной переключатель в положении {state_name}.")
         super().mouseDoubleClickEvent(event)
 
 
@@ -712,6 +725,7 @@ class CircuitScene(QGraphicsScene):
     selection_changed = pyqtSignal(object)
     status_changed = pyqtSignal(str)
     animation_state_changed = pyqtSignal()
+    animation_frame_changed = pyqtSignal(int, int, float)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -789,6 +803,18 @@ class CircuitScene(QGraphicsScene):
         self.animation_timer.stop()
         self.animation_state_changed.emit()
 
+    def reset_animation(self) -> bool:
+        if self.animation_result is None:
+            return False
+        self.animation_timer.stop()
+        self.animation_frame = 0
+        if len(self.animation_result.time_s) > 0:
+            self.apply_result_frame(0)
+        else:
+            self._emit_animation_frame_changed()
+        self.animation_state_changed.emit()
+        return True
+
     def set_animation_speed(self, speed: float) -> None:
         new_speed = max(float(speed), 1.0e-9)
         if self.animation_result is not None and self.animation_timer.isActive():
@@ -835,6 +861,7 @@ class CircuitScene(QGraphicsScene):
         self.next_port_id = 1
         self.route_mode = False
         self.selected_terminal = None
+        self._emit_animation_frame_changed()
         self.selection_changed.emit(None)
 
     def _emit_selection_change(self) -> None:
@@ -1210,6 +1237,8 @@ class CircuitScene(QGraphicsScene):
     def apply_result_frame(self, frame_index: int) -> None:
         if self.animation_result is None:
             return
+        frame_index = max(0, min(frame_index, len(self.animation_result.time_s) - 1))
+        self.animation_frame = frame_index
         for component_name, observables in self.animation_result.component_observables.items():
             item = self.component_name_map.get(component_name)
             if item is not None:
@@ -1225,6 +1254,7 @@ class CircuitScene(QGraphicsScene):
                 if wire_item.component_name == component_name:
                     wire_item.apply_observables({key: float(values[frame_index]) for key, values in observables.items()})
                     break
+        self._emit_animation_frame_changed()
 
     def play_result(self, result) -> None:
         self.stop_animation()
@@ -1276,6 +1306,14 @@ class CircuitScene(QGraphicsScene):
             return 0
         index = int(self.animation_result.time_s.searchsorted(time_s, side="right") - 1)
         return max(0, min(index, len(self.animation_result.time_s) - 1))
+
+    def _emit_animation_frame_changed(self) -> None:
+        if self.animation_result is None or len(self.animation_result.time_s) == 0:
+            self.animation_frame_changed.emit(-1, 0, 0.0)
+            return
+        frame_index = max(0, min(self.animation_frame, len(self.animation_result.time_s) - 1))
+        time_s = float(self.animation_result.time_s[frame_index])
+        self.animation_frame_changed.emit(frame_index, len(self.animation_result.time_s), time_s)
 
 
 class CircuitView(QGraphicsView):

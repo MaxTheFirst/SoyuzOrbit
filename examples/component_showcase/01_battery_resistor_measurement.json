@@ -1,0 +1,206 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 160.0,
+      "y": 320.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Battery",
+      "name": "BAT1",
+      "params": {
+        "capacity_mah": 1000.0,
+        "internal_resistance_ohm": 0.4,
+        "nominal_voltage_v": 9.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 160.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 3,
+      "kind": "Ammeter",
+      "name": "AM1",
+      "params": {
+        "shunt_resistance_ohm": 0.01
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 400.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Resistor",
+      "name": "R1",
+      "params": {
+        "resistance_ohm": 330.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 640.0,
+      "y": 120.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Voltmeter",
+      "name": "VM_R",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [],
+      "x": 640.0,
+      "y": 280.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "\u0411\u0430\u0442\u0430\u0440\u0435\u044f, \u0440\u0435\u0437\u0438\u0441\u0442\u043e\u0440 \u0438 \u0438\u0437\u043c\u0435\u0440\u0438\u0442\u0435\u043b\u0438",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 0.0001,
+    "duration_s": 0.05
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 3
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 4
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 5
+    },
+    {
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "a_position": [
+        0.0,
+        0.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        0.0,
+        0.0
+      ],
+      "params": {},
+      "path_length_px": 0.0,
+      "route_points": [],
+      "wire_id": 6
+    }
+  ]
+}
