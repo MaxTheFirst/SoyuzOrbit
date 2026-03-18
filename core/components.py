@@ -448,6 +448,7 @@ class PhysiBattery(TwoTerminalComponent):
         chemistry: str = "alkaline",
         internal_resistance_ohm: float = 1.2,
         initial_soc: float = 1.0,
+        discharge_enabled: bool = True,
         ambient_c: float = 25.0,
     ) -> None:
         super().__init__(name, positive, negative, ambient_c)
@@ -456,6 +457,7 @@ class PhysiBattery(TwoTerminalComponent):
         self.chemistry = chemistry.lower()
         self.internal_resistance_ohm = internal_resistance_ohm
         self.state_of_charge = clamp(initial_soc, 0.0, 1.0)
+        self.discharge_enabled = bool(discharge_enabled)
         self.heat_capacity_j_per_k = 35.0
         self.thermal_resistance_k_per_w = 8.0
         self.contact_thermal_resistance_k_per_w = 70.0
@@ -484,8 +486,9 @@ class PhysiBattery(TwoTerminalComponent):
     def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
         super().commit(terminal_voltages, time_s, dt_s)
         discharge_current = max(0.0, -self.last_current_a)
-        capacity_c = max(self.capacity_mah, 1.0) * 3.6
-        self.state_of_charge = clamp(self.state_of_charge - discharge_current * dt_s / capacity_c, 0.0, 1.0)
+        if self.discharge_enabled:
+            capacity_c = max(self.capacity_mah, 1.0) * 3.6
+            self.state_of_charge = clamp(self.state_of_charge - discharge_current * dt_s / capacity_c, 0.0, 1.0)
         self.integrate_temperature(self.last_current_a * self.last_current_a * self.effective_internal_resistance(), dt_s)
 
     def observe(self) -> dict[str, Any]:
@@ -495,6 +498,7 @@ class PhysiBattery(TwoTerminalComponent):
                 "soc": float(self.state_of_charge),
                 "open_circuit_voltage_v": float(self.open_circuit_voltage()),
                 "internal_resistance_ohm": float(self.effective_internal_resistance()),
+                "discharge_enabled": float(self.discharge_enabled),
             }
         )
         return data
@@ -1528,7 +1532,16 @@ class SPDTSwitch(Component):
 
 
 COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
-    "Battery": (PhysiBattery, {"nominal_voltage_v": 9.0, "capacity_mah": 550.0, "chemistry": "alkaline", "internal_resistance_ohm": 1.2}),
+    "Battery": (
+        PhysiBattery,
+        {
+            "nominal_voltage_v": 9.0,
+            "capacity_mah": 550.0,
+            "chemistry": "alkaline",
+            "internal_resistance_ohm": 1.2,
+            "discharge_enabled": True,
+        },
+    ),
     "AC Generator": (RealACGenerator, {"amplitude_v": 5.0, "frequency_hz": 1000.0, "internal_resistance_ohm": 0.5}),
     "Pulse Generator": (
         PulseGenerator,

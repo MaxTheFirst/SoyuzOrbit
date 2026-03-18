@@ -536,12 +536,13 @@ GUI и JSON не описывают MNA-узлы напрямую. Вместо 
 
 - Выводы: `positive`, `negative`.
 - GUI default params: `nominal_voltage_v=9.0`, `capacity_mah=550.0`, `chemistry="alkaline"`, `internal_resistance_ohm=1.2`.
-- Дополнительные Python-параметры: `initial_soc=1.0`, `ambient_c=25.0`.
+- Дополнительные Python-параметры: `initial_soc=1.0`, `discharge_enabled=True`, `ambient_c=25.0`.
 - Модель:
   - источник Тевенина с напряжением холостого хода `open_circuit_voltage()`;
   - внутреннее сопротивление зависит от SOC, температуры и текущего тока;
   - SOC уменьшается от разрядного тока.
-- Наблюдаемые величины: `temperature_c`, `surface_temperature_c`, `power_w`, `voltage_v`, `current_a`, `soc`, `open_circuit_voltage_v`, `internal_resistance_ohm`.
+- При `discharge_enabled=false` SOC фиксируется, и батарея не разряжается в ходе симуляции.
+- Наблюдаемые величины: `temperature_c`, `surface_temperature_c`, `power_w`, `voltage_v`, `current_a`, `soc`, `open_circuit_voltage_v`, `internal_resistance_ohm`, `discharge_enabled`.
 - Нюанс GUI: поле `chemistry` в панели свойств скрыто (`HIDDEN_USER_PARAMS`), но в Python и JSON поддерживается.
 
 #### `AC Generator` (`RealACGenerator`)

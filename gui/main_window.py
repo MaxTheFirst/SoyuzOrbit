@@ -40,6 +40,7 @@ PARAMETER_LABELS = {
     "capacity_mah": "Емкость, мАч",
     "chemistry": "Химия",
     "internal_resistance_ohm": "Внутреннее сопротивление, Ом",
+    "discharge_enabled": "Разряд включен",
     "amplitude_v": "Амплитуда, В",
     "high_voltage_v": "Высокий уровень, В",
     "low_voltage_v": "Низкий уровень, В",
