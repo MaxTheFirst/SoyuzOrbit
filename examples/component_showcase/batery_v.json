@@ -1,0 +1,187 @@
+{
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          298.0,
+          321.4
+        ]
+      ],
+      "x": 298.0,
+      "y": 337.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Battery",
+      "name": "Duracell Procell PC1604",
+      "params": {
+        "capacity_mah": 670.0,
+        "chemistry": "alkaline",
+        "discharge_enabled": false,
+        "internal_resistance_ohm": 0.0,
+        "nominal_voltage_v": 9.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          194.8,
+          113.0
+        ],
+        [
+          297.2,
+          113.0
+        ]
+      ],
+      "x": 246.0,
+      "y": 113.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Resistor",
+      "name": "CF-50 (\u04211-4) 0.5\u0412\u0442, 330 \u041e\u043c, 5%, \u0420\u0435\u0437\u0438\u0441\u0442\u043e\u0440 \u0443\u0433\u043b\u0435\u0440\u043e\u0434\u0438\u0441\u0442\u044b\u0439",
+      "params": {
+        "resistance_ohm": 330.0,
+        "temperature_coefficient": 0.0
+      },
+      "rotation_deg": 0.0,
+      "terminal_positions": [
+        [
+          199.24,
+          576.0
+        ],
+        [
+          306.76,
+          576.0
+        ]
+      ],
+      "x": 253.0,
+      "y": 576.0
+    }
+  ],
+  "field_ports": [],
+  "material_regions": [],
+  "name": "\u0421\u0445\u0435\u043c\u0430 \u043d\u0430 \u0445\u043e\u043b\u0441\u0442\u0435",
+  "schema_version": 3,
+  "settings": {
+    "dt_s": 0.01,
+    "duration_s": 10.0
+  },
+  "wires": [
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "a_position": [
+        194.8,
+        113.0
+      ],
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b_position": [
+        199.24,
+        576.0
+      ],
+      "params": {
+        "area_mm2": 0.75,
+        "auto_length_from_path": true,
+        "contact_resistance_ohm": 0.0,
+        "coupling_gain": 1.0,
+        "dielectric_conductance_s_per_m": 2e-10,
+        "length_m": 0.3,
+        "material": "copper",
+        "max_segments": 12,
+        "meters_per_pixel": 0.002,
+        "mutual_inductance_gain": 1.0,
+        "permittivity_scale": 1.0,
+        "proximity_gain": 0.003,
+        "segment_length_target_m": 0.06,
+        "thermal_coupling_gain": 1.0
+      },
+      "path_length_px": 463.0212884954643,
+      "route_points": [],
+      "wire_id": 1
+    },
+    {
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "a_position": [
+        306.76,
+        576.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        298.0,
+        321.4
+      ],
+      "params": {
+        "area_mm2": 0.75,
+        "auto_length_from_path": true,
+        "contact_resistance_ohm": 0.0,
+        "coupling_gain": 1.0,
+        "dielectric_conductance_s_per_m": 2e-10,
+        "length_m": 0.3,
+        "material": "copper",
+        "max_segments": 12,
+        "meters_per_pixel": 0.002,
+        "mutual_inductance_gain": 1.0,
+        "permittivity_scale": 1.0,
+        "proximity_gain": 0.003,
+        "segment_length_target_m": 0.06,
+        "thermal_coupling_gain": 1.0
+      },
+      "path_length_px": 254.750657702782,
+      "route_points": [],
+      "wire_id": 2
+    },
+    {
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "a_position": [
+        297.2,
+        113.0
+      ],
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "b_position": [
+        298.0,
+        321.4
+      ],
+      "params": {
+        "area_mm2": 0.75,
+        "auto_length_from_path": true,
+        "contact_resistance_ohm": 0.0,
+        "coupling_gain": 1.0,
+        "dielectric_conductance_s_per_m": 2e-10,
+        "length_m": 0.3,
+        "material": "copper",
+        "max_segments": 12,
+        "meters_per_pixel": 0.002,
+        "mutual_inductance_gain": 1.0,
+        "permittivity_scale": 1.0,
+        "proximity_gain": 0.003,
+        "segment_length_target_m": 0.06,
+        "thermal_coupling_gain": 1.0
+      },
+      "path_length_px": 208.40153550298038,
+      "route_points": [],
+      "wire_id": 6
+    }
+  ]
+}
