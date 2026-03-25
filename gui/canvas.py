@@ -336,7 +336,8 @@ class WireItem(QGraphicsPathItem):
         return self._hit_path()
 
     def boundingRect(self) -> QRectF:  # noqa: N802
-        return self._hit_path().boundingRect()
+        margin = max(self._line_width() + 8.0, 14.0) * 0.5 + 2.0
+        return self.path().boundingRect().adjusted(-margin, -margin, margin, margin)
 
     def itemChange(self, change, value):  # noqa: N802
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:

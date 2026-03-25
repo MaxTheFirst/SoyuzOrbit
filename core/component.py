@@ -34,6 +34,9 @@ class Component:
         self.electromagnetic_gain = 0.0
         self.permittivity_scale = 1.0
         self.mutual_inductance_gain = 1.0
+        self.freeze_temperature = False
+        self._thermal_case_fraction = 0.58
+        self._thermal_junction_fraction = 0.32
 
     def start_timestep(self, time_s: float, dt_s: float) -> None:
         del time_s, dt_s
@@ -55,6 +58,7 @@ class Component:
             "temperature_c": float(self.temperature_c),
             "surface_temperature_c": float(self.surface_temperature_c),
             "power_w": float(self.last_power_w),
+            "freeze_temperature": float(self.freeze_temperature),
         }
 
     def set_parameter(self, key: str, value: Any) -> None:
@@ -71,12 +75,18 @@ class Component:
         total_heat_capacity = max(self.heat_capacity_j_per_k, 1.0e-9)
         case_fraction = min(max(case_fraction, 0.1), 0.9)
         junction_fraction = min(max(junction_fraction, 0.05), 0.95)
+        self._thermal_case_fraction = case_fraction
+        self._thermal_junction_fraction = junction_fraction
         self.surface_heat_capacity_j_per_k = max(total_heat_capacity * case_fraction, 1.0e-9)
         self.heat_capacity_j_per_k = max(total_heat_capacity - self.surface_heat_capacity_j_per_k, 1.0e-9)
         self.junction_thermal_resistance_k_per_w = max(self.thermal_resistance_k_per_w * junction_fraction, 1.0e-6)
 
     def integrate_temperature(self, power_w: float, dt_s: float) -> None:
         self.last_power_w = float(power_w)
+        if self.freeze_temperature:
+            self.temperature_c = self.reference_temperature_c
+            self.surface_temperature_c = self.reference_temperature_c
+            return
         junction_capacity = max(self.heat_capacity_j_per_k, 1.0e-9)
         surface_capacity = max(self.surface_heat_capacity_j_per_k, 1.0e-9)
         heat_to_surface_w = (self.temperature_c - self.surface_temperature_c) / max(self.junction_thermal_resistance_k_per_w, 1.0e-9)

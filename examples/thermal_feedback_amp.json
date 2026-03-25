@@ -1,0 +1,320 @@
+{
+  "schema_version": 3,
+  "name": "Thermal Feedback Amplifier",
+  "settings": {
+    "duration_s": 0.24,
+    "dt_s": 0.000125
+  },
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "x": 140.0,
+      "y": 420.0
+    },
+    {
+      "component_id": 2,
+      "kind": "AC Generator",
+      "name": "SRC",
+      "params": {
+        "amplitude_v": 4.6,
+        "frequency_hz": 125.0,
+        "harmonic_2_ratio": 0.18,
+        "harmonic_3_ratio": 0.08,
+        "internal_resistance_ohm": 0.05,
+        "phase_noise_rad": 0.0,
+        "frequency_error": 0.0
+      },
+      "x": 140.0,
+      "y": 140.0
+    },
+    {
+      "component_id": 3,
+      "kind": "OpAmp",
+      "name": "OA1",
+      "params": {
+        "dominant_pole_hz": 70.0,
+        "output_current_limit_a": 0.28,
+        "output_resistance_ohm": 16.0,
+        "slew_rate_v_s": 500000.0
+      },
+      "x": 470.0,
+      "y": 170.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Bulb",
+      "name": "BULB_FB",
+      "params": {
+        "rated_voltage_v": 6.0,
+        "rated_power_w": 0.45,
+        "cold_ratio": 4.0,
+        "filament_operating_temp_c": 90.0,
+        "heat_capacity_j_per_k": 0.0008,
+        "thermal_resistance_k_per_w": 520.0,
+        "contact_thermal_resistance_k_per_w": 24.0,
+        "thermal_case_fraction": 0.22,
+        "thermal_junction_fraction": 0.46
+      },
+      "x": 690.0,
+      "y": 80.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Resistor",
+      "name": "R_G",
+      "params": {
+        "resistance_ohm": 22.0,
+        "temperature_coefficient": 0.0
+      },
+      "x": 690.0,
+      "y": 250.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Resistor",
+      "name": "R_LOAD",
+      "params": {
+        "resistance_ohm": 680.0,
+        "temperature_coefficient": 0.0
+      },
+      "x": 900.0,
+      "y": 170.0
+    },
+    {
+      "component_id": 7,
+      "kind": "Voltmeter",
+      "name": "VM_IN",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "x": 310.0,
+      "y": 320.0
+    },
+    {
+      "component_id": 8,
+      "kind": "Voltmeter",
+      "name": "VM_OUT",
+      "params": {
+        "input_resistance_ohm": 10000000.0
+      },
+      "x": 1040.0,
+      "y": 320.0
+    },
+    {
+      "component_id": 9,
+      "kind": "Audio Sink",
+      "name": "OUT_MON",
+      "params": {
+        "input_resistance_ohm": 1000000000.0,
+        "input_capacitance_f": 0.0,
+        "output_gain": 1.0,
+        "dc_block": false
+      },
+      "x": 1180.0,
+      "y": 170.0
+    }
+  ],
+  "material_regions": [],
+  "field_ports": [],
+  "wires": [
+    {
+      "wire_id": 1,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 2,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 7,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 3,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 4,
+      "a": {
+        "component_id": 7,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 5,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 6,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 7,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 5,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 8,
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 9,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "b": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 10,
+      "a": {
+        "component_id": 6,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 11,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "b": {
+        "component_id": 8,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 12,
+      "a": {
+        "component_id": 8,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 13,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 2
+      },
+      "b": {
+        "component_id": 9,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    },
+    {
+      "wire_id": 14,
+      "a": {
+        "component_id": 9,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      },
+      "params": {
+        "max_segments": 1
+      }
+    }
+  ]
+}

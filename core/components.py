@@ -1920,6 +1920,17 @@ def create_component(kind: str, name: str, nodes: list[str], **overrides: Any) -
     cls, defaults = COMPONENT_LIBRARY[kind]
     params = defaults.copy()
     params.update(overrides)
+    post_init_overrides: dict[str, Any] = {}
+    thermal_override_keys = (
+        "heat_capacity_j_per_k",
+        "thermal_resistance_k_per_w",
+        "contact_thermal_resistance_k_per_w",
+    )
+    for key in ("freeze_temperature", *thermal_override_keys):
+        if key in params:
+            post_init_overrides[key] = params.pop(key)
+    thermal_case_fraction = params.pop("thermal_case_fraction", None)
+    thermal_junction_fraction = params.pop("thermal_junction_fraction", None)
     if kind == "Wire":
         for key in (
             "auto_length_from_path",
@@ -1932,4 +1943,23 @@ def create_component(kind: str, name: str, nodes: list[str], **overrides: Any) -
             "thermal_coupling_gain",
         ):
             params.pop(key, None)
-    return cls(name, *nodes, **params)
+    instance = cls(name, *nodes, **params)
+    for key, value in post_init_overrides.items():
+        setattr(instance, key, value)
+    if (
+        any(key in post_init_overrides for key in thermal_override_keys)
+        or thermal_case_fraction is not None
+        or thermal_junction_fraction is not None
+    ):
+        case_fraction = float(
+            thermal_case_fraction
+            if thermal_case_fraction is not None
+            else getattr(instance, "_thermal_case_fraction", 0.58)
+        )
+        junction_fraction = float(
+            thermal_junction_fraction
+            if thermal_junction_fraction is not None
+            else getattr(instance, "_thermal_junction_fraction", 0.32)
+        )
+        instance.calibrate_thermal_network(case_fraction=case_fraction, junction_fraction=junction_fraction)
+    return instance

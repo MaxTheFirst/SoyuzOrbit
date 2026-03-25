@@ -15,6 +15,11 @@ PLOT_PANEL_ORDER = [
     "nodes",
     "currents",
     "voltages",
+    "audio_waveform",
+    "audio_zoom",
+    "audio_envelope",
+    "audio_spectrum",
+    "audio_transfer",
     "power_temperature",
     "temperature",
     "surface_temperature",
@@ -29,6 +34,11 @@ PLOT_PANEL_LABELS = {
     "nodes": "Напряжения по узлам",
     "currents": "Токи по компонентам",
     "voltages": "Напряжения компонентов",
+    "audio_waveform": "Аудио: напряжение вход/выход",
+    "audio_zoom": "Аудио: zoom формы волны",
+    "audio_envelope": "Аудио: огибающая",
+    "audio_spectrum": "Аудио: спектр",
+    "audio_transfer": "Аудио: transfer cloud",
     "power_temperature": "Мощность и температура",
     "temperature": "Температуры",
     "surface_temperature": "Температуры корпуса",
@@ -43,6 +53,11 @@ PLOT_PANEL_TITLES = {
     "nodes": "Напряжения узлов",
     "currents": "Токи компонентов",
     "voltages": "Напряжения и ЭДС",
+    "audio_waveform": "Аудио: входное и выходное напряжение",
+    "audio_zoom": "Аудио: увеличенный фрагмент волны",
+    "audio_envelope": "Аудио: кратковременная огибающая",
+    "audio_spectrum": "Аудио: спектр входа и выхода",
+    "audio_transfer": "Аудио: вход -> выход",
     "power_temperature": "Мощность и температура",
     "temperature": "Температуры компонентов",
     "surface_temperature": "Температуры корпуса",
@@ -57,6 +72,11 @@ PLOT_PANEL_YLABELS = {
     "nodes": "V",
     "currents": "A",
     "voltages": "V",
+    "audio_waveform": "V",
+    "audio_zoom": "V",
+    "audio_envelope": "V RMS",
+    "audio_spectrum": "dB",
+    "audio_transfer": "V",
     "power_temperature": "degC / W",
     "temperature": "degC",
     "surface_temperature": "degC",
@@ -201,6 +221,10 @@ def plot_panel_series(
         )
     if panel_id == "charge":
         return _component_series(result, lambda key: key in CHARGE_KEYS, primary_key="charge_c", visible_components=visible_components)
+    if panel_id == "audio_waveform":
+        return _audio_waveform_panel_data(result, visible_components=visible_components)
+    if panel_id == "audio_envelope":
+        return _audio_envelope_panel_data(result, visible_components=visible_components)
     if panel_id == "iv_xy":
         return []
     if panel_id == "state":
@@ -271,6 +295,186 @@ def _iv_xy_panel_data(
     return pairs
 
 
+def _audio_sample_rate_hz(result: SimulationResult) -> int:
+    dt_s = float(result.metadata.get("dt_s", 0.0))
+    if dt_s <= 0.0 and result.time_s.size >= 2:
+        diffs = np.diff(np.asarray(result.time_s, dtype=float))
+        positive = diffs[diffs > 0.0]
+        if positive.size > 0:
+            dt_s = float(np.median(positive))
+    if dt_s <= 0.0:
+        return 0
+    return max(int(round(1.0 / dt_s)), 1)
+
+
+def _collect_audio_sources(result: SimulationResult) -> list[tuple[str, np.ndarray, str]]:
+    sources: list[tuple[str, np.ndarray, str]] = []
+    for component_name, observables in result.component_observables.items():
+        if "emf_v" in observables and "source_sample_rate_hz" in observables:
+            label = f"Input:{display_plot_name(component_name)}"
+            sources.append((label, np.asarray(observables["emf_v"], dtype=float), component_name))
+    return sources
+
+
+def _collect_audio_sinks(result: SimulationResult) -> list[tuple[str, np.ndarray, str]]:
+    sinks: list[tuple[str, np.ndarray, str]] = []
+    for component_name, observables in result.component_observables.items():
+        if "captured_v" in observables:
+            label = f"Output:{display_plot_name(component_name)}"
+            sinks.append((label, np.asarray(observables["captured_v"], dtype=float), component_name))
+    return sinks
+
+
+def _audio_bundle(
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+) -> tuple[list[tuple[str, np.ndarray, str]], list[tuple[str, np.ndarray, str]]]:
+    all_sources = _collect_audio_sources(result)
+    all_sinks = _collect_audio_sinks(result)
+    if visible_components is None:
+        return all_sources, all_sinks
+
+    selected_sources = [item for item in all_sources if item[2] in visible_components]
+    selected_sinks = [item for item in all_sinks if item[2] in visible_components]
+
+    if selected_sources:
+        sources = selected_sources
+    elif selected_sinks and all_sources:
+        sources = all_sources[:1]
+    else:
+        sources = []
+    return sources, selected_sinks
+
+
+def _audio_active_mask(samples: np.ndarray) -> np.ndarray:
+    if samples.size == 0:
+        return np.zeros(0, dtype=bool)
+    threshold = max(float(np.max(np.abs(samples))) * 0.08, 1.0e-4)
+    return np.abs(samples) >= threshold
+
+
+def _audio_window_by_energy(series: list[tuple[str, np.ndarray]], window_samples: int) -> tuple[int, int]:
+    if not series:
+        return 0, 0
+    window = max(int(window_samples), 32)
+    sample_count = min(values.size for _label, values in series)
+    if sample_count <= 0:
+        return 0, 0
+    combined = np.zeros(sample_count, dtype=np.float32)
+    for _label, values in series:
+        trimmed = np.asarray(values[:sample_count], dtype=np.float32)
+        combined += np.square(trimmed, dtype=np.float32)
+    energy = np.convolve(combined, np.ones(window, dtype=np.float32), mode="same")
+    center = int(np.argmax(energy)) if energy.size else 0
+    start = max(center - window // 2, 0)
+    stop = min(start + window, sample_count)
+    start = max(stop - window, 0)
+    return start, stop
+
+
+def _audio_moving_rms(samples: np.ndarray, window_samples: int) -> np.ndarray:
+    window = max(int(window_samples), 1)
+    kernel = np.ones(window, dtype=np.float32) / float(window)
+    power = np.square(np.asarray(samples, dtype=np.float32), dtype=np.float32)
+    return np.sqrt(np.convolve(power, kernel, mode="same")).astype(float)
+
+
+def _audio_waveform_panel_data(
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+) -> list[tuple[str, np.ndarray]]:
+    sources, sinks = _audio_bundle(result, visible_components=visible_components)
+    return [(label, values) for label, values, _component_name in sources + sinks]
+
+
+def _audio_zoom_panel_data(
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+    zoom_ms: float = 45.0,
+) -> tuple[np.ndarray, list[tuple[str, np.ndarray]]]:
+    sample_rate_hz = _audio_sample_rate_hz(result)
+    if sample_rate_hz <= 0:
+        return np.zeros(0, dtype=float), []
+    series = _audio_waveform_panel_data(result, visible_components=visible_components)
+    if not series:
+        return np.zeros(0, dtype=float), []
+    start, stop = _audio_window_by_energy(series, int(round(sample_rate_hz * zoom_ms / 1000.0)))
+    time_axis_ms = np.arange(start, stop, dtype=float) * 1000.0 / float(sample_rate_hz)
+    zoom_series = [(label, values[start:stop]) for label, values in series]
+    return time_axis_ms, zoom_series
+
+
+def _audio_envelope_panel_data(
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+    envelope_ms: float = 20.0,
+) -> list[tuple[str, np.ndarray]]:
+    sample_rate_hz = _audio_sample_rate_hz(result)
+    if sample_rate_hz <= 0:
+        return []
+    window_samples = int(round(sample_rate_hz * envelope_ms / 1000.0))
+    return [
+        (label, _audio_moving_rms(values, window_samples))
+        for label, values in _audio_waveform_panel_data(result, visible_components=visible_components)
+    ]
+
+
+def _audio_spectrum_panel_data(
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+) -> tuple[np.ndarray, list[tuple[str, np.ndarray]]]:
+    sample_rate_hz = _audio_sample_rate_hz(result)
+    if sample_rate_hz <= 0:
+        return np.zeros(0, dtype=float), []
+    series = _audio_waveform_panel_data(result, visible_components=visible_components)
+    if not series:
+        return np.zeros(0, dtype=float), []
+    start, stop = _audio_window_by_energy(series, max(4096, int(round(sample_rate_hz * 0.256))))
+    spectral_series: list[tuple[str, np.ndarray]] = []
+    freqs = np.zeros(0, dtype=float)
+    for label, values in series:
+        segment = np.asarray(values[start:stop], dtype=np.float32)
+        if segment.size < 128:
+            continue
+        window = np.hanning(segment.size).astype(np.float32)
+        spectrum = np.fft.rfft(segment * window)
+        freqs = np.fft.rfftfreq(segment.size, d=1.0 / float(sample_rate_hz))
+        magnitude_db = 20.0 * np.log10(np.maximum(np.abs(spectrum), 1.0e-8))
+        spectral_series.append((label, magnitude_db.astype(float)))
+    return freqs.astype(float), spectral_series
+
+
+def _audio_transfer_panel_data(
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+) -> list[tuple[str, np.ndarray, np.ndarray]]:
+    sources, sinks = _audio_bundle(result, visible_components=visible_components)
+    if not sources or not sinks:
+        return []
+    input_label, input_values, _source_name = sources[0]
+    pairs: list[tuple[str, np.ndarray, np.ndarray]] = []
+    input_values = np.asarray(input_values, dtype=float)
+    for sink_label, sink_values, _sink_name in sinks:
+        output_values = np.asarray(sink_values, dtype=float)
+        mask = _audio_active_mask(input_values) | _audio_active_mask(output_values)
+        finite_mask = np.isfinite(input_values) & np.isfinite(output_values)
+        indices = np.flatnonzero(mask & finite_mask)
+        if indices.size < 512:
+            indices = np.flatnonzero(finite_mask)
+        if indices.size == 0:
+            continue
+        if indices.size > 5000:
+            indices = indices[np.linspace(0, indices.size - 1, 5000, dtype=int)]
+        pairs.append((f"{sink_label} <- {input_label}", input_values[indices], output_values[indices]))
+    return pairs
+
+
 def _panel_has_data(
     result: SimulationResult,
     panel_id: str,
@@ -285,6 +489,14 @@ def _panel_has_data(
         return bool(charge_series or flux_series)
     if panel_id == "iv_xy":
         return bool(_iv_xy_panel_data(result, visible_components=visible_components))
+    if panel_id == "audio_zoom":
+        _time_axis_ms, zoom_series = _audio_zoom_panel_data(result, visible_components=visible_components)
+        return bool(zoom_series)
+    if panel_id == "audio_spectrum":
+        _freqs, spectral_series = _audio_spectrum_panel_data(result, visible_components=visible_components)
+        return bool(spectral_series)
+    if panel_id == "audio_transfer":
+        return bool(_audio_transfer_panel_data(result, visible_components=visible_components))
     return bool(plot_panel_series(result, panel_id, visible_components=visible_components))
 
 
@@ -460,6 +672,88 @@ def _render_iv_xy_panel(
     return handles, labels
 
 
+def _render_audio_time_panel(
+    ax,
+    time_axis: np.ndarray,
+    series: list[tuple[str, np.ndarray]],
+    *,
+    panel_id: str,
+    xlabel: str,
+) -> tuple[list[object], list[str]]:
+    rendered_series: list[tuple[str, np.ndarray, object]] = []
+    for label, values in series:
+        trimmed = np.asarray(values[: time_axis.size], dtype=float)
+        line = ax.plot(time_axis, trimmed, label=label)[0]
+        rendered_series.append((label, trimmed, line))
+    ax.set_title(PLOT_PANEL_TITLES[panel_id], pad=10.0)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(PLOT_PANEL_YLABELS[panel_id])
+    ax.grid(True, alpha=0.3)
+    ax.margins(x=0.03)
+    _add_end_labels(ax, rendered_series)
+    handles, labels = ax.get_legend_handles_labels()
+    return list(handles), list(labels)
+
+
+def _render_audio_spectrum_panel(
+    ax,
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+) -> tuple[list[object], list[str]]:
+    freqs, spectral_series = _audio_spectrum_panel_data(result, visible_components=visible_components)
+    handles: list[object] = []
+    labels: list[str] = []
+    if freqs.size == 0:
+        return handles, labels
+    freq_limit_hz = min(_audio_sample_rate_hz(result) / 2.0, 6000.0)
+    freq_mask = freqs <= freq_limit_hz
+    for label, magnitude_db in spectral_series:
+        line = ax.plot(freqs[freq_mask], magnitude_db[freq_mask], label=label)[0]
+        handles.append(line)
+        labels.append(line.get_label())
+    ax.set_title(PLOT_PANEL_TITLES["audio_spectrum"], pad=10.0)
+    ax.set_xlabel("Hz")
+    ax.set_ylabel(PLOT_PANEL_YLABELS["audio_spectrum"])
+    ax.grid(True, alpha=0.3)
+    ax.margins(x=0.03)
+    return handles, labels
+
+
+def _render_audio_transfer_panel(
+    ax,
+    result: SimulationResult,
+    *,
+    visible_components: set[str] | None = None,
+) -> tuple[list[object], list[str]]:
+    pairs = _audio_transfer_panel_data(result, visible_components=visible_components)
+    handles: list[object] = []
+    labels: list[str] = []
+    if not pairs:
+        return handles, labels
+    diagonal_limit = 1.0
+    for label, x_values, y_values in pairs:
+        diagonal_limit = max(diagonal_limit, float(np.max(np.abs(x_values))), float(np.max(np.abs(y_values))))
+        scatter = ax.scatter(x_values, y_values, s=6, alpha=0.22, edgecolors="none", label=label)
+        handles.append(scatter)
+        labels.append(label)
+    ax.plot(
+        [-diagonal_limit, diagonal_limit],
+        [-diagonal_limit, diagonal_limit],
+        linestyle="--",
+        linewidth=1.0,
+        color="#444444",
+        alpha=0.7,
+    )
+    ax.set_xlim(-diagonal_limit, diagonal_limit)
+    ax.set_ylim(-diagonal_limit, diagonal_limit)
+    ax.set_title(PLOT_PANEL_TITLES["audio_transfer"], pad=10.0)
+    ax.set_xlabel("Input, V")
+    ax.set_ylabel("Output, V")
+    ax.grid(True, alpha=0.3)
+    return handles, labels
+
+
 def render_result_figure(
     figure: Figure,
     result: SimulationResult,
@@ -483,6 +777,21 @@ def render_result_figure(
             continue
         if panel_id == "iv_xy":
             panel_data = _iv_xy_panel_data(result, visible_components=visible_components)
+            if panel_data:
+                panels.append((panel_id, panel_data))
+            continue
+        if panel_id == "audio_zoom":
+            panel_data = _audio_zoom_panel_data(result, visible_components=visible_components)
+            if panel_data[1]:
+                panels.append((panel_id, panel_data))
+            continue
+        if panel_id == "audio_spectrum":
+            panel_data = _audio_spectrum_panel_data(result, visible_components=visible_components)
+            if panel_data[1]:
+                panels.append((panel_id, panel_data))
+            continue
+        if panel_id == "audio_transfer":
+            panel_data = _audio_transfer_panel_data(result, visible_components=visible_components)
             if panel_data:
                 panels.append((panel_id, panel_data))
             continue
@@ -510,6 +819,14 @@ def render_result_figure(
             charge_series, flux_series = panel_data
             labels = [label for label, _values in charge_series] + [label for label, _values in flux_series]
         elif panel_id == "iv_xy":
+            labels = [label for label, _x_values, _y_values in panel_data]
+        elif panel_id == "audio_zoom":
+            _time_axis_ms, zoom_series = panel_data
+            labels = [label for label, _values in zoom_series]
+        elif panel_id == "audio_spectrum":
+            _freqs, spectral_series = panel_data
+            labels = [label for label, _values in spectral_series]
+        elif panel_id == "audio_transfer":
             labels = [label for label, _x_values, _y_values in panel_data]
         else:
             labels = [label for label, _values in panel_data]
@@ -547,6 +864,35 @@ def render_result_figure(
             handles, labels = _render_energy_storage_panel(ax, result, visible_components=visible_components)
         elif panel_id == "iv_xy":
             handles, labels = _render_iv_xy_panel(ax, result, visible_components=visible_components)
+        elif panel_id == "audio_waveform":
+            handles, labels = _render_audio_time_panel(
+                ax,
+                np.asarray(result.time_s, dtype=float),
+                panel_data,
+                panel_id=panel_id,
+                xlabel="Time, s",
+            )
+        elif panel_id == "audio_zoom":
+            time_axis_ms, zoom_series = panel_data
+            handles, labels = _render_audio_time_panel(
+                ax,
+                time_axis_ms,
+                zoom_series,
+                panel_id=panel_id,
+                xlabel="Time, ms",
+            )
+        elif panel_id == "audio_envelope":
+            handles, labels = _render_audio_time_panel(
+                ax,
+                np.asarray(result.time_s, dtype=float),
+                panel_data,
+                panel_id=panel_id,
+                xlabel="Time, s",
+            )
+        elif panel_id == "audio_spectrum":
+            handles, labels = _render_audio_spectrum_panel(ax, result, visible_components=visible_components)
+        elif panel_id == "audio_transfer":
+            handles, labels = _render_audio_transfer_panel(ax, result, visible_components=visible_components)
         else:
             handles, labels = _render_standard_time_panel(ax, result, panel_id, panel_data)
         if handles and labels:
