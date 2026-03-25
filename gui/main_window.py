@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import QSize, Qt
@@ -24,7 +25,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core import COMPONENT_TERMINALS, load_project
+from core import (
+    COMPONENT_TERMINALS,
+    SUPPORTED_AUDIO_EXPORT_EXTENSIONS,
+    audio_buffer_from_simulation_result,
+    is_supported_audio_export_path,
+    load_project,
+    save_audio_file,
+)
 from core.field_solver import simulate_fdtd_wave, simulate_full_wave_maxwell_2d, solve_quasi_static_field
 
 from .canvas import CircuitScene, CircuitView, ComponentItem, FieldPortItem, MaterialRegionItem, WireItem
@@ -41,8 +49,19 @@ PARAMETER_LABELS = {
     "chemistry": "Химия",
     "internal_resistance_ohm": "Внутреннее сопротивление, Ом",
     "amplitude_v": "Амплитуда, В",
+    "peak_voltage_v": "Пик аудиоисточника, В",
     "high_voltage_v": "Высокий уровень, В",
     "low_voltage_v": "Низкий уровень, В",
+    "file_path": "Путь к аудиофайлу",
+    "channel": "Канал аудио",
+    "normalize": "Нормализовать",
+    "loop": "Повторять по кругу",
+    "hold_last_value": "Держать последний уровень",
+    "target_sample_rate_hz": "Частота чтения, Гц",
+    "start_time_s": "Старт воспроизведения, с",
+    "dc_offset_v": "Постоянное смещение, В",
+    "output_gain": "Коэф. усиления выхода",
+    "dc_block": "Убирать DC-смещение",
     "frequency_hz": "Частота, Гц",
     "phase_rad": "Фаза, рад",
     "rotation_deg": "Поворот, °",
@@ -199,6 +218,7 @@ OBSERVABLE_LABELS = {
     "current_limit": "ограничение тока",
     "reading_a": "показание, А",
     "reading_v": "показание, В",
+    "captured_v": "аудиовыход, В",
 }
 
 
@@ -336,6 +356,8 @@ class MainWindow(QMainWindow):
             "SPDT Switch",
             "AC Generator",
             "Pulse Generator",
+            "Audio File Source",
+            "Audio Sink",
             "MOSFET",
             "OpAmp",
         ]
@@ -388,6 +410,8 @@ class MainWindow(QMainWindow):
         start_button.clicked.connect(self._run_simulation)
         plots_button = QPushButton("Графики")
         plots_button.clicked.connect(self._show_result_plots)
+        export_audio_button = QPushButton("Экспорт аудио")
+        export_audio_button.clicked.connect(self._export_audio)
         field_button = QPushButton("Карта поля")
         field_button.clicked.connect(self._show_field_map)
         fdtd_button = QPushButton("FDTD волна")
@@ -409,10 +433,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(load_button, 8, 1)
         layout.addWidget(start_button, 9, 0)
         layout.addWidget(plots_button, 9, 1)
-        layout.addWidget(field_button, 10, 0, 1, 2)
-        layout.addWidget(fdtd_button, 11, 0, 1, 2)
-        layout.addWidget(maxwell_button, 12, 0)
-        layout.addWidget(maxwell_tez_button, 12, 1)
+        layout.addWidget(export_audio_button, 10, 0, 1, 2)
+        layout.addWidget(field_button, 11, 0, 1, 2)
+        layout.addWidget(fdtd_button, 12, 0, 1, 2)
+        layout.addWidget(maxwell_button, 13, 0)
+        layout.addWidget(maxwell_tez_button, 13, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -774,6 +799,60 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка Maxwell TEz", str(exc))
 
+    def _audio_sink_names(self, result) -> list[str]:
+        sinks: list[str] = []
+        for component_name, observables in result.component_observables.items():
+            if "captured_v" in observables:
+                sinks.append(component_name)
+        return sinks
+
+    def _selected_audio_sink_name(self, sink_names: list[str]) -> str | None:
+        if len(sink_names) == 1:
+            return sink_names[0]
+        if isinstance(self.current_selected, ComponentItem) and self.current_selected.kind == "Audio Sink":
+            if self.current_selected.name in sink_names:
+                return self.current_selected.name
+        return None
+
+    def _default_audio_export_path(self, sink_name: str) -> str:
+        base_name = f"{sink_name}_processed.wav" if sink_name else "processed_audio.wav"
+        return str(Path.cwd() / base_name)
+
+    def _audio_export_filter(self) -> str:
+        patterns = " ".join(f"*{extension}" for extension in sorted(SUPPORTED_AUDIO_EXPORT_EXTENSIONS))
+        return f"Аудио ({patterns})"
+
+    def _export_audio(self) -> None:
+        try:
+            _, result = self._simulate_scene()
+            sink_names = self._audio_sink_names(result)
+            if not sink_names:
+                raise ValueError("На схеме нет ни одного Audio Sink с наблюдаемым captured_v.")
+            sink_name = self._selected_audio_sink_name(sink_names)
+            if sink_name is None:
+                raise ValueError(
+                    "На схеме несколько Audio Sink. Выдели нужный Audio Sink и повтори экспорт."
+                )
+            path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Экспорт аудио",
+                self._default_audio_export_path(sink_name),
+                self._audio_export_filter(),
+            )
+            if not path:
+                return
+            target_path = Path(path)
+            if not target_path.suffix:
+                target_path = target_path.with_suffix(".wav")
+            if not is_supported_audio_export_path(target_path):
+                supported = ", ".join(sorted(SUPPORTED_AUDIO_EXPORT_EXTENSIONS))
+                raise ValueError(f"Неподдерживаемый формат аудио. Доступно: {supported}")
+            buffer = audio_buffer_from_simulation_result(result, sink_name, observable_key="captured_v", normalize=False)
+            save_audio_file(target_path, buffer, normalize=False)
+            self.statusBar().showMessage(f"Аудио экспортировано: {target_path}")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка экспорта аудио", str(exc))
+
     def _write_log(self, result) -> None:
         lines = [f"Схема: {result.metadata['name']}", f"Длительность: {result.metadata['duration_s']:.6f} с", "", "Узлы:"]
         for node, values in result.node_voltages.items():
@@ -782,7 +861,20 @@ class MainWindow(QMainWindow):
         lines.append("Компоненты:")
         for component_name, observables in result.component_observables.items():
             chunks = []
-            for key in ("current_a", "voltage_v", "temperature_c", "surface_temperature_c", "brightness", "glow", "soc", "blown", "current_limit", "reading_a", "reading_v"):
+            for key in (
+                "current_a",
+                "voltage_v",
+                "temperature_c",
+                "surface_temperature_c",
+                "brightness",
+                "glow",
+                "soc",
+                "blown",
+                "current_limit",
+                "reading_a",
+                "reading_v",
+                "captured_v",
+            ):
                 if key in observables:
                     chunks.append(f"{OBSERVABLE_LABELS.get(key, key)}={observables[key][-1]:.5g}")
             lines.append(f"  {_display_result_name(component_name)}: " + ", ".join(chunks))

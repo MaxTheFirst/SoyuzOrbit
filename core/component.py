@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Sequence
 
 import numpy as np
@@ -58,6 +59,13 @@ class Component:
 
     def set_parameter(self, key: str, value: Any) -> None:
         setattr(self, key, value)
+
+    def export_state(self) -> dict[str, Any]:
+        return copy.deepcopy(self.__dict__)
+
+    def restore_state(self, state: dict[str, Any]) -> None:
+        self.__dict__.clear()
+        self.__dict__.update(copy.deepcopy(state))
 
     def calibrate_thermal_network(self, case_fraction: float = 0.58, junction_fraction: float = 0.32) -> None:
         total_heat_capacity = max(self.heat_capacity_j_per_k, 1.0e-9)

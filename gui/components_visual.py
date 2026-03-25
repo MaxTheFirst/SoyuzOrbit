@@ -44,6 +44,8 @@ TEMPLATES: dict[str, VisualTemplate] = {
     "Battery": VisualTemplate("Battery", "Батарея", "Battery", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Battery"], COMPONENT_LIBRARY["Battery"][1].copy()),
     "AC Generator": VisualTemplate("AC Generator", "Генератор AC", "AC Generator", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["AC Generator"], COMPONENT_LIBRARY["AC Generator"][1].copy()),
     "Pulse Generator": VisualTemplate("Pulse Generator", "Импульсный генератор", "Pulse Generator", (128, 72), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Pulse Generator"], COMPONENT_LIBRARY["Pulse Generator"][1].copy()),
+    "Audio File Source": VisualTemplate("Audio File Source", "Аудио источник", "Audio File Source", (136, 78), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Audio File Source"], COMPONENT_LIBRARY["Audio File Source"][1].copy()),
+    "Audio Sink": VisualTemplate("Audio Sink", "Аудио выход", "Audio Sink", (136, 78), ((0.1, 0.5), (0.9, 0.5)), COMPONENT_TERMINALS["Audio Sink"], COMPONENT_LIBRARY["Audio Sink"][1].copy()),
     "Resistor": VisualTemplate("Resistor", "Резистор", "Resistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Resistor"], COMPONENT_LIBRARY["Resistor"][1].copy()),
     "Thermistor": VisualTemplate("Thermistor", "Термистор", "Thermistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Thermistor"], COMPONENT_LIBRARY["Thermistor"][1].copy()),
     "Photoresistor": VisualTemplate("Photoresistor", "Фоторезистор", "Photoresistor", (128, 72), ((0.08, 0.5), (0.92, 0.5)), COMPONENT_TERMINALS["Photoresistor"], COMPONENT_LIBRARY["Photoresistor"][1].copy()),
@@ -185,6 +187,36 @@ def _render_pulse_generator(template: VisualTemplate, state: dict[str, Any]) -> 
         (100, h / 2 + 10),
     ]
     draw.line(pulse_points, fill="#15803d", width=4)
+    return image
+
+
+def _render_audio_source(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    draw.line((12, h / 2, 28, h / 2), fill="#6a6f73", width=4)
+    draw.line((w - 28, h / 2, w - 12, h / 2), fill="#6a6f73", width=4)
+    draw.rounded_rectangle((28, 14, w - 28, h - 14), radius=16, fill="#eef3ff", outline="#1d4ed8", width=3)
+    waveform = []
+    for step in range(7):
+        x = 40 + step * 12
+        y = h / 2 + (10 if step % 2 == 0 else -10)
+        waveform.append((x, y))
+    draw.line(waveform, fill="#1d4ed8", width=3)
+    draw.rounded_rectangle((w - 54, 22, w - 34, h - 22), radius=4, fill="#0f172a")
+    draw.text((w / 2 + 8, h / 2 - 8), "AUDIO", fill="#0f172a")
+    return image
+
+
+def _render_audio_sink(template: VisualTemplate, state: dict[str, Any]) -> Image.Image:
+    image = _base_canvas(template, state)
+    draw = ImageDraw.Draw(image)
+    w, h = template.size
+    draw.line((12, h / 2, 28, h / 2), fill="#6a6f73", width=4)
+    draw.line((w - 28, h / 2, w - 12, h / 2), fill="#6a6f73", width=4)
+    draw.rounded_rectangle((28, 14, w - 28, h - 14), radius=16, fill="#fff7ed", outline="#c2410c", width=3)
+    draw.polygon(((46, h / 2), (68, h / 2 - 12), (68, h / 2 - 5), (92, h / 2 - 5), (92, h / 2 + 5), (68, h / 2 + 5), (68, h / 2 + 12)), fill="#c2410c")
+    draw.text((w / 2 + 2, h / 2 - 8), "REC", fill="#7c2d12")
     return image
 
 
@@ -464,6 +496,8 @@ RENDERERS = {
     "Battery": _render_battery,
     "AC Generator": _render_generator,
     "Pulse Generator": _render_pulse_generator,
+    "Audio File Source": _render_audio_source,
+    "Audio Sink": _render_audio_sink,
     "Resistor": _render_resistor,
     "Thermistor": _render_thermistor,
     "Photoresistor": _render_photoresistor,

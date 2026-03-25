@@ -40,6 +40,8 @@ NAME_PREFIXES = {
     "Battery": "Батарея",
     "AC Generator": "Генератор",
     "Pulse Generator": "ИмпГен",
+    "Audio File Source": "Аудио",
+    "Audio Sink": "Выход",
     "Resistor": "Резистор",
     "Thermistor": "Термистор",
     "Photoresistor": "Фоторезистор",

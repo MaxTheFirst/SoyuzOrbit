@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any, Callable
 
 import numpy as np
 
+from .audio_io import AudioBuffer, load_audio_file
 from .component import Component, TwoTerminalComponent
 from .physics import (
     CHEMISTRY_CURVES,
@@ -615,6 +617,240 @@ class PulseGenerator(TwoTerminalComponent):
                 "period_s": float(self.period_s),
                 "duty_cycle": float(self.duty_cycle),
                 "pulse_width_s": float(effective_pulse_width),
+            }
+        )
+        return data
+
+
+class AudioFileSource(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        file_path: str = "",
+        internal_resistance_ohm: float = 0.2,
+        peak_voltage_v: float = 5.0,
+        dc_offset_v: float = 0.0,
+        channel: str = "mono",
+        normalize: bool = True,
+        loop: bool = False,
+        hold_last_value: bool = False,
+        target_sample_rate_hz: int | None = None,
+        audio_buffer: AudioBuffer | None = None,
+        start_time_s: float = 0.0,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        self.file_path = str(file_path)
+        self.internal_resistance_ohm = max(internal_resistance_ohm, 1.0e-6)
+        self.peak_voltage_v = float(peak_voltage_v)
+        self.dc_offset_v = float(dc_offset_v)
+        self.channel = str(channel)
+        self.normalize = bool(normalize)
+        self.loop = bool(loop)
+        self.hold_last_value = bool(hold_last_value)
+        self.target_sample_rate_hz = None if target_sample_rate_hz in (None, 0) else int(target_sample_rate_hz)
+        self.start_time_s = float(start_time_s)
+        self.instantaneous_emf_v = float(dc_offset_v)
+        self.last_sample_index = 0
+        self.source_active = False
+        self._audio_buffer: AudioBuffer | None = None
+        self._signal_samples = np.zeros(0, dtype=np.float32)
+        self._signal_sample_rate_hz = 44100
+        self._source_duration_s = 0.0
+        self._load_source(audio_buffer=audio_buffer)
+
+    def reload_source(self, file_path: str | None = None, *, audio_buffer: AudioBuffer | None = None) -> None:
+        if file_path is not None:
+            self.file_path = str(file_path)
+        self._load_source(audio_buffer=audio_buffer)
+
+    def _load_source(self, *, audio_buffer: AudioBuffer | None) -> None:
+        if audio_buffer is not None:
+            buffer = audio_buffer.normalized_copy() if self.normalize else audio_buffer
+        elif self.file_path.strip():
+            buffer = load_audio_file(
+                self.file_path,
+                target_sample_rate_hz=self.target_sample_rate_hz,
+                mono=False,
+                normalize=self.normalize,
+            )
+        else:
+            self._audio_buffer = None
+            self._signal_samples = np.zeros(0, dtype=np.float32)
+            self._signal_sample_rate_hz = self.target_sample_rate_hz or 44100
+            self._source_duration_s = 0.0
+            return
+
+        self._audio_buffer = buffer
+        self._signal_samples = self._select_channel_samples(buffer, self.channel)
+        self._signal_sample_rate_hz = buffer.sample_rate_hz
+        self._source_duration_s = float(self._signal_samples.size / max(self._signal_sample_rate_hz, 1))
+
+    def _select_channel_samples(self, buffer: AudioBuffer, channel: str) -> np.ndarray:
+        lowered = str(channel).strip().lower()
+        if lowered in {"mono", "mix", "avg", "average"}:
+            return np.ascontiguousarray(buffer.mono_mix(), dtype=np.float32)
+        if lowered in {"left", "l"}:
+            index = 0
+        elif lowered in {"right", "r"}:
+            index = 1 if buffer.channels > 1 else 0
+        else:
+            try:
+                index = int(lowered)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Unsupported channel selector '{channel}'. Use mono, left, right, or an integer index."
+                ) from exc
+        if not 0 <= index < buffer.channels:
+            raise ValueError(f"Channel index {index} is out of range for {buffer.channels} channels.")
+        return np.ascontiguousarray(buffer.channel_samples(index), dtype=np.float32)
+
+    def _sample_value(self, time_s: float) -> float:
+        if self._signal_samples.size == 0:
+            self.last_sample_index = 0
+            self.source_active = False
+            return 0.0
+
+        relative_time_s = float(time_s) - self.start_time_s
+        if relative_time_s < 0.0:
+            self.last_sample_index = 0
+            self.source_active = False
+            return 0.0
+
+        if self.loop and self._source_duration_s > 1.0e-12:
+            relative_time_s = relative_time_s % self._source_duration_s
+            self.source_active = True
+        elif relative_time_s >= self._source_duration_s:
+            self.last_sample_index = max(self._signal_samples.size - 1, 0)
+            self.source_active = False
+            if self.hold_last_value and self._signal_samples.size > 0:
+                return float(self._signal_samples[-1])
+            return 0.0
+        else:
+            self.source_active = True
+
+        position = relative_time_s * self._signal_sample_rate_hz
+        left_index = int(math.floor(position))
+        if left_index >= self._signal_samples.size - 1:
+            self.last_sample_index = max(self._signal_samples.size - 1, 0)
+            return float(self._signal_samples[self.last_sample_index])
+
+        ratio = position - left_index
+        self.last_sample_index = left_index
+        left = float(self._signal_samples[left_index])
+        right = float(self._signal_samples[left_index + 1])
+        return left + (right - left) * ratio
+
+    def emf(self, time_s: float) -> float:
+        sample_value = self._sample_value(time_s)
+        return self.dc_offset_v + self.peak_voltage_v * sample_value
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del dt_s
+        self.instantaneous_emf_v = self.emf(time_s)
+        conductance = 1.0 / self.internal_resistance_ohm
+        current = conductance * voltage_v - conductance * self.instantaneous_emf_v
+        return current, conductance
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update(
+            {
+                "emf_v": float(self.instantaneous_emf_v),
+                "source_active": float(self.source_active),
+                "playback_progress": (
+                    float(self.last_sample_index / max(self._signal_samples.size - 1, 1))
+                    if self._signal_samples.size > 0
+                    else 0.0
+                ),
+                "source_duration_s": float(self._source_duration_s),
+                "source_sample_rate_hz": float(self._signal_sample_rate_hz),
+            }
+        )
+        return data
+
+    def export_state(self) -> dict[str, Any]:
+        state = copy.deepcopy(
+            {
+                key: value
+                for key, value in self.__dict__.items()
+                if key not in {"_audio_buffer", "_signal_samples"}
+            }
+        )
+        state["_audio_buffer"] = self._audio_buffer
+        state["_signal_samples"] = self._signal_samples
+        return state
+
+    def restore_state(self, state: dict[str, Any]) -> None:
+        payload = copy.deepcopy(
+            {
+                key: value
+                for key, value in state.items()
+                if key not in {"_audio_buffer", "_signal_samples"}
+            }
+        )
+        self.__dict__.clear()
+        self.__dict__.update(payload)
+        self._audio_buffer = state.get("_audio_buffer")
+        self._signal_samples = state.get("_signal_samples", np.zeros(0, dtype=np.float32))
+
+
+class AudioSink(TwoTerminalComponent):
+    def __init__(
+        self,
+        name: str,
+        positive: str,
+        negative: str,
+        input_resistance_ohm: float = 1.0e9,
+        input_capacitance_f: float = 0.0,
+        output_gain: float = 1.0,
+        dc_block: bool = False,
+        ambient_c: float = 25.0,
+    ) -> None:
+        super().__init__(name, positive, negative, ambient_c)
+        self.input_resistance_ohm = max(input_resistance_ohm, 1.0)
+        self.input_capacitance_f = max(input_capacitance_f, 0.0)
+        self.output_gain = float(output_gain)
+        self.dc_block = bool(dc_block)
+        self.previous_voltage_v = 0.0
+        self.running_mean_v = 0.0
+        self.captured_v = 0.0
+        self.input_current_a = 0.0
+        self.heat_capacity_j_per_k = 1.5
+        self.thermal_resistance_k_per_w = 20.0
+        self.contact_thermal_resistance_k_per_w = 140.0
+        self.calibrate_thermal_network(case_fraction=0.72, junction_fraction=0.16)
+
+    def branch_current(self, voltage_v: float, time_s: float, dt_s: float) -> tuple[float, float]:
+        del time_s
+        dt = max(dt_s, 1.0e-12)
+        g_res = 1.0 / max(self.input_resistance_ohm, 1.0)
+        g_cap = self.input_capacitance_f / dt
+        i_eq = -g_cap * self.previous_voltage_v
+        current = (g_res + g_cap) * voltage_v + i_eq
+        return current, g_res + g_cap
+
+    def commit(self, terminal_voltages: np.ndarray, time_s: float, dt_s: float) -> None:
+        super().commit(terminal_voltages, time_s, dt_s)
+        resistive_current = self.last_voltage_v / max(self.input_resistance_ohm, 1.0)
+        capacitive_current = self.last_current_a - resistive_current
+        self.input_current_a = resistive_current + capacitive_current
+        self.previous_voltage_v = self.last_voltage_v
+        mean_alpha = dt_s / (0.02 + dt_s)
+        self.running_mean_v += mean_alpha * (self.last_voltage_v - self.running_mean_v)
+        base_capture = self.last_voltage_v - self.running_mean_v if self.dc_block else self.last_voltage_v
+        self.captured_v = self.output_gain * base_capture
+        self.integrate_temperature(abs(self.last_voltage_v * self.input_current_a), dt_s)
+
+    def observe(self) -> dict[str, Any]:
+        data = super().observe()
+        data.update(
+            {
+                "reading_v": float(self.last_voltage_v),
+                "captured_v": float(self.captured_v),
+                "input_current_a": float(self.input_current_a),
             }
         )
         return data
@@ -1543,6 +1779,30 @@ COMPONENT_LIBRARY: dict[str, tuple[type[Component], dict[str, Any]]] = {
             "internal_resistance_ohm": 0.8,
         },
     ),
+    "Audio File Source": (
+        AudioFileSource,
+        {
+            "file_path": "",
+            "internal_resistance_ohm": 0.2,
+            "peak_voltage_v": 5.0,
+            "dc_offset_v": 0.0,
+            "channel": "mono",
+            "normalize": True,
+            "loop": False,
+            "hold_last_value": False,
+            "target_sample_rate_hz": 22050,
+            "start_time_s": 0.0,
+        },
+    ),
+    "Audio Sink": (
+        AudioSink,
+        {
+            "input_resistance_ohm": 1.0e9,
+            "input_capacitance_f": 0.0,
+            "output_gain": 1.0,
+            "dc_block": False,
+        },
+    ),
     "Resistor": (RealResistor, {"resistance_ohm": 220.0}),
     "Thermistor": (Thermistor, {"resistance_at_25c_ohm": 10000.0, "beta_k": 3950.0}),
     "Photoresistor": (
@@ -1630,6 +1890,8 @@ COMPONENT_TERMINALS: dict[str, tuple[str, ...]] = {
     "Battery": ("positive", "negative"),
     "AC Generator": ("positive", "negative"),
     "Pulse Generator": ("positive", "negative"),
+    "Audio File Source": ("positive", "negative"),
+    "Audio Sink": ("positive", "negative"),
     "Resistor": ("positive", "negative"),
     "Thermistor": ("positive", "negative"),
     "Photoresistor": ("positive", "negative"),

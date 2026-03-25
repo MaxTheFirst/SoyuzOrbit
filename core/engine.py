@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import importlib.util
 import math
 from collections import defaultdict
@@ -362,12 +361,11 @@ class Circuit:
         return False
 
     def _snapshot_component_states(self) -> list[dict[str, Any]]:
-        return [copy.deepcopy(component.__dict__) for component in self.components]
+        return [component.export_state() for component in self.components]
 
     def _restore_component_states(self, states: list[dict[str, Any]]) -> None:
         for component, state in zip(self.components, states, strict=False):
-            component.__dict__.clear()
-            component.__dict__.update(copy.deepcopy(state))
+            component.restore_state(state)
 
     def _simulate_once(
         self,
