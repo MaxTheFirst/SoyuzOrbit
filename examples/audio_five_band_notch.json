@@ -1,0 +1,540 @@
+{
+  "schema_version": 3,
+  "name": "Audio Five-Band Notch Absorber",
+  "settings": {
+    "duration_s": 0.3,
+    "dt_s": 0.0000625
+  },
+  "components": [
+    {
+      "component_id": 1,
+      "kind": "Ground",
+      "name": "GND1",
+      "params": {},
+      "x": 120.0,
+      "y": 520.0
+    },
+    {
+      "component_id": 2,
+      "kind": "Audio File Source",
+      "name": "SRC_AUDIO",
+      "params": {
+        "file_path": "",
+        "internal_resistance_ohm": 0.2,
+        "peak_voltage_v": 1.0,
+        "dc_offset_v": 0.0,
+        "channel": "mono",
+        "normalize": true,
+        "loop": false,
+        "hold_last_value": false,
+        "target_sample_rate_hz": 16000,
+        "start_time_s": 0.0
+      },
+      "x": 120.0,
+      "y": 140.0
+    },
+    {
+      "component_id": 3,
+      "kind": "Resistor",
+      "name": "R_IN",
+      "params": {
+        "resistance_ohm": 680.0
+      },
+      "x": 320.0,
+      "y": 140.0
+    },
+    {
+      "component_id": 4,
+      "kind": "Junction",
+      "name": "J_OUT",
+      "params": {},
+      "x": 520.0,
+      "y": 140.0
+    },
+    {
+      "component_id": 5,
+      "kind": "Inductor",
+      "name": "L_NOTCH_1",
+      "params": {
+        "inductance_h": 0.0068,
+        "dc_resistance_ohm": 52.0,
+        "saturation_current_a": 1.2
+      },
+      "x": 520.0,
+      "y": 230.0
+    },
+    {
+      "component_id": 6,
+      "kind": "Junction",
+      "name": "J_NOTCH_1",
+      "params": {},
+      "x": 520.0,
+      "y": 300.0
+    },
+    {
+      "component_id": 7,
+      "kind": "Capacitor",
+      "name": "C_NOTCH_1",
+      "params": {
+        "capacitance_f": 0.0000047,
+        "esr_ohm": 0.18,
+        "max_voltage_v": 6.0
+      },
+      "x": 520.0,
+      "y": 390.0
+    },
+    {
+      "component_id": 8,
+      "kind": "Inductor",
+      "name": "L_NOTCH_2",
+      "params": {
+        "inductance_h": 0.0027,
+        "dc_resistance_ohm": 40.0,
+        "saturation_current_a": 1.2
+      },
+      "x": 670.0,
+      "y": 230.0
+    },
+    {
+      "component_id": 9,
+      "kind": "Junction",
+      "name": "J_NOTCH_2",
+      "params": {},
+      "x": 670.0,
+      "y": 300.0
+    },
+    {
+      "component_id": 10,
+      "kind": "Capacitor",
+      "name": "C_NOTCH_2",
+      "params": {
+        "capacitance_f": 0.0000047,
+        "esr_ohm": 0.16,
+        "max_voltage_v": 6.0
+      },
+      "x": 670.0,
+      "y": 390.0
+    },
+    {
+      "component_id": 11,
+      "kind": "Inductor",
+      "name": "L_NOTCH_3",
+      "params": {
+        "inductance_h": 0.0012,
+        "dc_resistance_ohm": 30.0,
+        "saturation_current_a": 1.2
+      },
+      "x": 820.0,
+      "y": 230.0
+    },
+    {
+      "component_id": 12,
+      "kind": "Junction",
+      "name": "J_NOTCH_3",
+      "params": {},
+      "x": 820.0,
+      "y": 300.0
+    },
+    {
+      "component_id": 13,
+      "kind": "Capacitor",
+      "name": "C_NOTCH_3",
+      "params": {
+        "capacitance_f": 0.0000047,
+        "esr_ohm": 0.14,
+        "max_voltage_v": 6.0
+      },
+      "x": 820.0,
+      "y": 390.0
+    },
+    {
+      "component_id": 14,
+      "kind": "Inductor",
+      "name": "L_NOTCH_4",
+      "params": {
+        "inductance_h": 0.00047,
+        "dc_resistance_ohm": 22.0,
+        "saturation_current_a": 1.2
+      },
+      "x": 970.0,
+      "y": 230.0
+    },
+    {
+      "component_id": 15,
+      "kind": "Junction",
+      "name": "J_NOTCH_4",
+      "params": {},
+      "x": 970.0,
+      "y": 300.0
+    },
+    {
+      "component_id": 16,
+      "kind": "Capacitor",
+      "name": "C_NOTCH_4",
+      "params": {
+        "capacitance_f": 0.0000047,
+        "esr_ohm": 0.12,
+        "max_voltage_v": 6.0
+      },
+      "x": 970.0,
+      "y": 390.0
+    },
+    {
+      "component_id": 17,
+      "kind": "Inductor",
+      "name": "L_NOTCH_5",
+      "params": {
+        "inductance_h": 0.0002,
+        "dc_resistance_ohm": 16.0,
+        "saturation_current_a": 1.2
+      },
+      "x": 1120.0,
+      "y": 230.0
+    },
+    {
+      "component_id": 18,
+      "kind": "Junction",
+      "name": "J_NOTCH_5",
+      "params": {},
+      "x": 1120.0,
+      "y": 300.0
+    },
+    {
+      "component_id": 19,
+      "kind": "Capacitor",
+      "name": "C_NOTCH_5",
+      "params": {
+        "capacitance_f": 0.0000047,
+        "esr_ohm": 0.1,
+        "max_voltage_v": 6.0
+      },
+      "x": 1120.0,
+      "y": 390.0
+    },
+    {
+      "component_id": 20,
+      "kind": "Capacitor",
+      "name": "C_TOP_SHAVE",
+      "params": {
+        "capacitance_f": 0.0000000047,
+        "max_voltage_v": 6.0
+      },
+      "x": 1270.0,
+      "y": 250.0
+    },
+    {
+      "component_id": 21,
+      "kind": "Audio Sink",
+      "name": "OUT_NOTCH",
+      "params": {
+        "input_resistance_ohm": 1000000000.0,
+        "input_capacitance_f": 0.0,
+        "output_gain": 1.75,
+        "dc_block": true
+      },
+      "x": 1270.0,
+      "y": 140.0
+    }
+  ],
+  "material_regions": [],
+  "field_ports": [],
+  "wires": [
+    {
+      "wire_id": 1,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 3,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 2,
+      "a": {
+        "component_id": 3,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 4,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 3,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 5,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 4,
+      "a": {
+        "component_id": 5,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 6,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 5,
+      "a": {
+        "component_id": 6,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 7,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 6,
+      "a": {
+        "component_id": 7,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 7,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 8,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 8,
+      "a": {
+        "component_id": 8,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 9,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 9,
+      "a": {
+        "component_id": 9,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 10,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 10,
+      "a": {
+        "component_id": 10,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 11,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 11,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 12,
+      "a": {
+        "component_id": 11,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 12,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 13,
+      "a": {
+        "component_id": 12,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 13,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 14,
+      "a": {
+        "component_id": 13,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 15,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 14,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 16,
+      "a": {
+        "component_id": 14,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 15,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 17,
+      "a": {
+        "component_id": 15,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 16,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 18,
+      "a": {
+        "component_id": 16,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 19,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 17,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 20,
+      "a": {
+        "component_id": 17,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 18,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 21,
+      "a": {
+        "component_id": 18,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 19,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 22,
+      "a": {
+        "component_id": 19,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 23,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 20,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 24,
+      "a": {
+        "component_id": 20,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 25,
+      "a": {
+        "component_id": 4,
+        "terminal_index": 0
+      },
+      "b": {
+        "component_id": 21,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 26,
+      "a": {
+        "component_id": 21,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    },
+    {
+      "wire_id": 27,
+      "a": {
+        "component_id": 2,
+        "terminal_index": 1
+      },
+      "b": {
+        "component_id": 1,
+        "terminal_index": 0
+      }
+    }
+  ]
+}
