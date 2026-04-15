@@ -6,6 +6,7 @@ from typing import Any
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSizePolicy,
     QTextEdit,
     QVBoxLayout,
@@ -241,6 +243,11 @@ class MainWindow(QMainWindow):
         self.animation_toggle_button: QPushButton | None = None
         self.animation_reset_button: QPushButton | None = None
         self.animation_info_label: QLabel | None = None
+        self.animation_loop_checkbox: QCheckBox | None = None
+        self.animation_frame_slider: QSlider | None = None
+        self._updating_animation_slider = False
+        self._scrubbing_animation = False
+        self._resume_animation_after_scrub = False
         self.last_circuit = None
         self.last_result = None
         self.last_field_snapshot = None
@@ -287,6 +294,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_status_bar()
         self._clear_properties("Выбери элемент, чтобы менять его параметры.")
+        self._sync_animation_button()
         self.statusBar().showMessage("Готово. Delete удаляет объект или провод. Esc отменяет добавление, соединение и трассировку.")
 
     def _build_ui(self) -> None:
@@ -385,6 +393,16 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.dt_input, 1, 1)
         layout.addWidget(QLabel("Скорость x"), 2, 0)
         layout.addWidget(self.animation_speed_input, 2, 1)
+        self.animation_frame_slider = QSlider(Qt.Orientation.Horizontal)
+        self.animation_frame_slider.setRange(0, 0)
+        self.animation_frame_slider.setEnabled(False)
+        self.animation_frame_slider.setToolTip("Покадровая прокрутка результата симуляции.")
+        self.animation_frame_slider.sliderPressed.connect(self._on_animation_slider_pressed)
+        self.animation_frame_slider.sliderReleased.connect(self._on_animation_slider_released)
+        self.animation_frame_slider.valueChanged.connect(self._on_animation_slider_changed)
+        self.animation_loop_checkbox = QCheckBox("Повторять")
+        self.animation_loop_checkbox.setChecked(True)
+        self.animation_loop_checkbox.toggled.connect(self._toggle_animation_loop)
 
         wire_button = QPushButton("Соединить")
         wire_button.clicked.connect(self.scene.set_connect_mode)
@@ -421,23 +439,25 @@ class MainWindow(QMainWindow):
         maxwell_tez_button = QPushButton("Maxwell TEz")
         maxwell_tez_button.clicked.connect(self._show_maxwell_tez_wave)
 
-        layout.addWidget(wire_button, 3, 0)
-        layout.addWidget(delete_button, 3, 1)
-        layout.addWidget(route_button, 4, 0, 1, 2)
-        layout.addWidget(material_button, 5, 0)
-        layout.addWidget(port_button, 5, 1)
-        layout.addWidget(clear_button, 6, 0)
-        layout.addWidget(self.animation_toggle_button, 6, 1)
-        layout.addWidget(self.animation_reset_button, 7, 0, 1, 2)
-        layout.addWidget(save_button, 8, 0)
-        layout.addWidget(load_button, 8, 1)
-        layout.addWidget(start_button, 9, 0)
-        layout.addWidget(plots_button, 9, 1)
-        layout.addWidget(export_audio_button, 10, 0, 1, 2)
-        layout.addWidget(field_button, 11, 0, 1, 2)
-        layout.addWidget(fdtd_button, 12, 0, 1, 2)
-        layout.addWidget(maxwell_button, 13, 0)
-        layout.addWidget(maxwell_tez_button, 13, 1)
+        layout.addWidget(self.animation_frame_slider, 3, 0, 1, 2)
+        layout.addWidget(self.animation_loop_checkbox, 4, 0, 1, 2)
+        layout.addWidget(wire_button, 5, 0)
+        layout.addWidget(delete_button, 5, 1)
+        layout.addWidget(route_button, 6, 0, 1, 2)
+        layout.addWidget(material_button, 7, 0)
+        layout.addWidget(port_button, 7, 1)
+        layout.addWidget(clear_button, 8, 0)
+        layout.addWidget(self.animation_toggle_button, 8, 1)
+        layout.addWidget(self.animation_reset_button, 9, 0, 1, 2)
+        layout.addWidget(save_button, 10, 0)
+        layout.addWidget(load_button, 10, 1)
+        layout.addWidget(start_button, 11, 0)
+        layout.addWidget(plots_button, 11, 1)
+        layout.addWidget(export_audio_button, 12, 0, 1, 2)
+        layout.addWidget(field_button, 13, 0, 1, 2)
+        layout.addWidget(fdtd_button, 14, 0, 1, 2)
+        layout.addWidget(maxwell_button, 15, 0)
+        layout.addWidget(maxwell_tez_button, 15, 1)
         return box
 
     def _build_log_box(self) -> QWidget:
@@ -667,10 +687,45 @@ class MainWindow(QMainWindow):
     def _sync_animation_button(self) -> None:
         if self.animation_toggle_button is None:
             return
-        if self.scene.animation_result is None or len(self.scene.animation_result.time_s) <= 1:
-            self.animation_toggle_button.setText("Пауза")
+        result = self.scene.animation_result
+        has_result = result is not None and len(result.time_s) > 0
+        has_animation = result is not None and len(result.time_s) > 1
+        self.animation_toggle_button.setEnabled(has_animation)
+        if self.animation_reset_button is not None:
+            self.animation_reset_button.setEnabled(has_result)
+        if self.animation_frame_slider is not None:
+            self.animation_frame_slider.setEnabled(has_result)
+        if not has_animation:
+            self.animation_toggle_button.setText("Запустить анимацию")
             return
         self.animation_toggle_button.setText("Пауза" if self.scene.animation_timer.isActive() else "Продолжить")
+
+    def _toggle_animation_loop(self, checked: bool) -> None:
+        self.scene.set_animation_loop(checked)
+        mode = "по кругу" if checked else "до последнего кадра"
+        self.statusBar().showMessage(f"Анимация будет идти {mode}.")
+
+    def _on_animation_slider_pressed(self) -> None:
+        self._scrubbing_animation = True
+        self._resume_animation_after_scrub = self.scene.animation_timer.isActive()
+        if self._resume_animation_after_scrub:
+            self.scene.stop_animation()
+            self._sync_animation_button()
+
+    def _on_animation_slider_changed(self, value: int) -> None:
+        if self._updating_animation_slider or self.animation_frame_slider is None:
+            return
+        if not self.animation_frame_slider.isEnabled():
+            return
+        self.scene.set_animation_frame(value)
+
+    def _on_animation_slider_released(self) -> None:
+        self._scrubbing_animation = False
+        if not self._resume_animation_after_scrub:
+            return
+        self._resume_animation_after_scrub = False
+        self.scene.toggle_animation()
+        self._sync_animation_button()
 
     def _toggle_animation(self) -> None:
         try:
@@ -696,6 +751,16 @@ class MainWindow(QMainWindow):
     def _update_animation_info(self, frame_index: int, total_frames: int, time_s: float) -> None:
         if self.animation_info_label is None:
             return
+        if self.animation_frame_slider is not None:
+            self._updating_animation_slider = True
+            if total_frames <= 0 or frame_index < 0:
+                self.animation_frame_slider.setRange(0, 0)
+                self.animation_frame_slider.setValue(0)
+            else:
+                self.animation_frame_slider.setRange(0, total_frames - 1)
+                if not self._scrubbing_animation:
+                    self.animation_frame_slider.setValue(frame_index)
+            self._updating_animation_slider = False
         if total_frames <= 0 or frame_index < 0:
             self.animation_info_label.setText("Кадр: -- / -- | t = ---.--- с")
             return
@@ -730,7 +795,8 @@ class MainWindow(QMainWindow):
     def _run_simulation(self) -> None:
         try:
             self._simulate_scene()
-            self.statusBar().showMessage("Симуляция завершена. Анимация запущена и будет повторяться по кругу.")
+            loop_text = "по кругу" if self.scene.animation_loop else "до последнего кадра"
+            self.statusBar().showMessage(f"Симуляция завершена. Анимация запущена и идет {loop_text}.")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Ошибка симуляции", str(exc))
 

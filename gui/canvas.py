@@ -751,6 +751,7 @@ class CircuitScene(QGraphicsScene):
         self.animation_result = None
         self.animation_frame = 0
         self.animation_speed = 1.0
+        self.animation_loop = True
         self.animation_anchor_real_s = 0.0
         self.animation_anchor_sim_time_s = 0.0
         self.component_name_map: dict[str, ComponentItem] = {}
@@ -831,6 +832,22 @@ class CircuitScene(QGraphicsScene):
                 self.apply_result_frame(frame_index)
             return
         self.animation_speed = new_speed
+
+    def set_animation_loop(self, enabled: bool) -> None:
+        self.animation_loop = bool(enabled)
+        if self.animation_result is not None and self.animation_timer.isActive():
+            now_s = time.perf_counter()
+            current_time_s = self._animation_target_time_s(now_s)
+            self._set_animation_anchor(now_s=now_s, sim_time_s=current_time_s)
+
+    def set_animation_frame(self, frame_index: int) -> bool:
+        if self.animation_result is None or len(self.animation_result.time_s) == 0:
+            return False
+        frame_index = max(0, min(int(frame_index), len(self.animation_result.time_s) - 1))
+        self.animation_frame = frame_index
+        self.apply_result_frame(frame_index)
+        self._set_animation_anchor(now_s=time.perf_counter(), sim_time_s=float(self.animation_result.time_s[frame_index]))
+        return True
 
     def toggle_animation(self) -> bool:
         if self.animation_result is None or len(self.animation_result.time_s) <= 1:
@@ -1301,8 +1318,13 @@ class CircuitScene(QGraphicsScene):
         if self.animation_result is None or len(self.animation_result.time_s) == 0:
             return 0.0
         last_time_s = float(self.animation_result.time_s[-1])
+        if last_time_s <= 0.0:
+            return 0.0
         elapsed_s = max(now_s - self.animation_anchor_real_s, 0.0)
-        return min(self.animation_anchor_sim_time_s + elapsed_s * self.animation_speed, last_time_s)
+        target_time_s = self.animation_anchor_sim_time_s + elapsed_s * self.animation_speed
+        if self.animation_loop:
+            return math.fmod(target_time_s, last_time_s)
+        return min(target_time_s, last_time_s)
 
     def _frame_index_for_time(self, time_s: float) -> int:
         if self.animation_result is None or len(self.animation_result.time_s) == 0:
