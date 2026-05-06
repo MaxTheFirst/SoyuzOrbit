@@ -142,6 +142,33 @@ def back_focal_length(spec: LensSpec) -> float:
     return f_eff * (1.0 - ((n - 1.0) * spec.center_thickness) / (n * spec.radius_front))
 
 
+def paraxial_lens_matrix(spec: LensSpec) -> np.ndarray:
+    n = spec.refractive_index
+    r1 = np.inf if np.isinf(spec.radius_front) else spec.radius_front
+    r2 = -np.inf if np.isinf(spec.radius_back) else -spec.radius_back
+
+    def refraction_matrix(n1: float, n2: float, radius: float) -> np.ndarray:
+        if np.isinf(radius):
+            return np.array([[1.0, 0.0], [0.0, 1.0]])
+        power = (n2 - n1) / radius
+        return np.array([[1.0, 0.0], [-power, 1.0]])
+
+    translation = np.array([[1.0, spec.center_thickness / n], [0.0, 1.0]])
+    first_surface = refraction_matrix(1.0, n, r1)
+    second_surface = refraction_matrix(n, 1.0, r2)
+    return second_surface @ translation @ first_surface
+
+
+def paraxial_image_distance(spec: LensSpec, object_distance: float) -> float:
+    matrix = paraxial_lens_matrix(spec)
+    a, b = matrix[0]
+    c, d = matrix[1]
+    denominator = c * object_distance + d
+    if np.isclose(denominator, 0.0):
+        return float("inf")
+    return float(-(a * object_distance + b) / denominator)
+
+
 def gaussian_image_distance(object_distance: float, focal_length: float) -> float:
     return 1.0 / (1.0 / focal_length - 1.0 / object_distance)
 
