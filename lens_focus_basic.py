@@ -156,7 +156,7 @@ def make_debug_report(
         f"shift from EFL = {(z_real - f_eff) * 1e6:.1f} мкм",
         f"Airy radius estimate = {airy * 1e6:.3f} мкм",
         f"Airy radius / dx = {pixels_per_airy:.3f} пикс",
-        "warning = поперечное пятно недоразрешено сеткой" if pixels_per_airy < 2.0 else "warning = разрешение приемлемое",
+        "warning = поперечное пятно недоразрешено сеткой" if pixels_per_airy < 3.0 else "warning = разрешение приемлемое",
         "note = в точном фокусе ожидаются кольца Эйри; на исходной ASM-сетке они почти скрыты дискретизацией",
         "note = BFL для толстой линзы некорректно сравнивать с этой моделью, потому что линза задана как один фазовый экран",
         f"oversampled focal profile at Airy radius: ideal = {focal_profile_ideal_norm[airy_index]:.4f}, real = {focal_profile_real_norm[airy_index]:.4f}",
@@ -191,17 +191,19 @@ def make_debug_report(
 wavelength = 532e-9
 refractive_index = bk7_refractive_index(wavelength)
 
+# Use a slightly smaller clear aperture and a denser grid so the Airy-scale
+# spot is resolved by several pixels in the raw ASM plots.
 lens = LensSpec(
     wavelength=wavelength,
     refractive_index=refractive_index,
-    aperture_radius=2.0e-3,
+    aperture_radius=1.4e-3,
     radius_front=25e-3,
     radius_back=25e-3,
     center_thickness=4.0e-3,
 )
 
-window_size = 4.5e-3
-samples = 1536
+window_size = 3.4e-3
+samples = 2048
 x, X, Y, dx = make_grid(window_size, samples)
 
 field_before_lens = plane_wave(X.shape)
@@ -298,7 +300,7 @@ plt.grid(alpha=0.3)
 plt.legend(fontsize=8)
 
 plt.subplot(2, 2, 3)
-plt.title("ASM-профили у фокуса, нормировка")
+plt.title("ASM-профили: EFL vs фактический фокус")
 plt.semilogy(
     x[profile_zoom_mask] * 1e6,
     profile_theory_norm[profile_zoom_mask],
@@ -322,7 +324,7 @@ plt.grid(alpha=0.3)
 plt.legend(fontsize=8)
 
 plt.subplot(2, 2, 4)
-plt.title("Oversampled профиль в плоскости EFL")
+plt.title("Oversampled: идеал vs реальная линза в EFL")
 plt.semilogy(
     focal_x[focal_zoom_mask] * 1e6,
     focal_profile_ideal_norm[focal_zoom_mask],

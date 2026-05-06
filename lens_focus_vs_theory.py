@@ -16,6 +16,28 @@ from lens_wave_optics import (
 )
 
 
+def refine_focus_scan(
+    field_after_lens: np.ndarray,
+    wavelength: float,
+    dx: float,
+    X: np.ndarray,
+    Y: np.ndarray,
+    image_distance_theory: float,
+    roi_radius: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray | float]]:
+    coarse_distances = np.linspace(0.75 * image_distance_theory, 1.25 * image_distance_theory, 41)
+    coarse_scan = focus_scan(field_after_lens, wavelength, dx, coarse_distances, X, Y, roi_radius=roi_radius)
+
+    coarse_step = float(coarse_distances[1] - coarse_distances[0])
+    coarse_axis = float(coarse_scan["best_axis_distance"])
+    coarse_rms = float(coarse_scan["best_rms_distance"])
+    fine_center = 0.5 * (coarse_axis + coarse_rms)
+    fine_half_width = max(abs(coarse_axis - fine_center), abs(coarse_rms - fine_center)) + coarse_step
+    fine_distances = np.linspace(fine_center - fine_half_width, fine_center + fine_half_width, 61)
+    fine_scan = focus_scan(field_after_lens, wavelength, dx, fine_distances, X, Y, roi_radius=roi_radius)
+    return fine_distances, fine_scan
+
+
 wavelength = 532e-9
 refractive_index = bk7_refractive_index(wavelength)
 
@@ -29,8 +51,10 @@ lens = LensSpec(
 )
 
 source_distance = 120e-3
-window_size = 9e-3
-samples = 512
+# Tighten the transverse window and increase sampling so the focal spot is not
+# crushed into a sub-pixel artifact in the screen plots.
+window_size = 3.2e-3
+samples = 1280
 x, X, Y, dx = make_grid(window_size, samples)
 
 field_at_lens = point_source(X, Y, wavelength, source_distance)
@@ -39,8 +63,16 @@ field_after_lens = field_at_lens * real_lens_transmission(X, Y, lens)
 f_eff = effective_focal_length(lens)
 image_distance_theory = gaussian_image_distance(source_distance, f_eff)
 
-scan_distances = np.linspace(0.7 * image_distance_theory, 1.3 * image_distance_theory, 31)
-scan = focus_scan(field_after_lens, wavelength, dx, scan_distances, X, Y, roi_radius=0.3e-3)
+roi_radius = 0.12e-3
+scan_distances, scan = refine_focus_scan(
+    field_after_lens=field_after_lens,
+    wavelength=wavelength,
+    dx=dx,
+    X=X,
+    Y=Y,
+    image_distance_theory=image_distance_theory,
+    roi_radius=roi_radius,
+)
 z_axis = scan["best_axis_distance"]
 z_rms = scan["best_rms_distance"]
 
@@ -49,8 +81,9 @@ screen_rms = angular_spectrum_propagate(field_after_lens, wavelength, dx, z_rms)
 
 intensity_axis = np.abs(screen_axis) ** 2
 intensity_rms = np.abs(screen_rms) ** 2
-spot_radius = rms_spot_radius(intensity_rms, X, Y, roi_radius=0.3e-3)
+spot_radius = rms_spot_radius(intensity_rms, X, Y, roi_radius=roi_radius)
 airy = airy_radius(wavelength, z_rms, lens.aperture_radius)
+pixels_per_airy = airy / dx
 
 print("--- Теоретический и фактический фокус ---")
 print(f"Расстояние от источника до линзы: {source_distance * 1000:.1f} мм")
@@ -61,8 +94,10 @@ print(f"Минимум RMS-пятна: {z_rms * 1000:.2f} мм")
 print(f"Разница теория - минимум RMS: {(z_rms - image_distance_theory) * 1e6:.1f} мкм")
 print(f"RMS-радиус пятна: {spot_radius * 1e6:.1f} мкм")
 print(f"Дифракционный радиус Эйри: {airy * 1e6:.1f} мкм")
+print(f"Радиус Эйри в пикселях: {pixels_per_airy:.2f}")
 
 plt.figure(figsize=(15, 5))
+zoom_half_width_mm = 0.08
 
 plt.subplot(1, 3, 1)
 plt.title("Интенсивность на оси vs z")
@@ -84,8 +119,8 @@ plt.imshow(
 )
 plt.xlabel("x, мм")
 plt.ylabel("y, мм")
-plt.xlim(-0.25, 0.25)
-plt.ylim(-0.25, 0.25)
+plt.xlim(-zoom_half_width_mm, zoom_half_width_mm)
+plt.ylim(-zoom_half_width_mm, zoom_half_width_mm)
 
 plt.subplot(1, 3, 3)
 plt.title("Экран в плоскости минимума RMS")
@@ -96,8 +131,8 @@ plt.imshow(
 )
 plt.xlabel("x, мм")
 plt.ylabel("y, мм")
-plt.xlim(-0.25, 0.25)
-plt.ylim(-0.25, 0.25)
+plt.xlim(-zoom_half_width_mm, zoom_half_width_mm)
+plt.ylim(-zoom_half_width_mm, zoom_half_width_mm)
 
 plt.tight_layout()
 plt.show()
